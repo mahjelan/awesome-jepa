@@ -88,6 +88,11 @@ def _draw_overlay(
     contrast: float,
     edge_density: float,
     dominant_colors: list[list[int]],
+    frame_index: Optional[int] = None,
+    total_frames_estimate: Optional[int] = None,
+    temporal_frame_errors: Optional[list[float]] = None,
+    temporal_high_error_indices: Optional[list[int]] = None,
+    semantic_keyframe_labels: Optional[list[dict]] = None,
 ) -> None:
     import cv2
     import numpy as np
@@ -100,6 +105,48 @@ def _draw_overlay(
     y0 = h - 220
     if y0 < 10:
         y0 = 10
+
+    # Cohesive: temporal timeline at top + semantic corner + cut badge
+    if temporal_frame_errors and frame_index is not None and total_frames_estimate and total_frames_estimate > 0:
+        n = len(temporal_frame_errors)
+        analysis_idx = min((frame_index * n) // total_frames_estimate, n - 1) if n else 0
+        # Thin timeline strip at top (32px)
+        strip_h = 32
+        overlay_top = frame.copy()
+        cv2.rectangle(overlay_top, (0, 0), (w, strip_h), (20, 20, 28), -1)
+        cv2.addWeighted(overlay_top, 0.7, frame, 0.3, 0, frame)
+        max_e = max(temporal_frame_errors) if temporal_frame_errors else 1.0
+        n_bars = min(40, n)
+        bar_w = max(2, (w - 20) // n_bars)
+        for i in range(n_bars):
+            idx = (i * n) // n_bars
+            if idx < len(temporal_frame_errors):
+                e = temporal_frame_errors[idx]
+                bh = int((strip_h - 8) * min(1.0, e / max_e)) if max_e > 0 else 0
+                x1 = 10 + i * bar_w
+                is_cut = (temporal_high_error_indices or []) and (idx + 1) in temporal_high_error_indices
+                color = (80, 120, 255) if is_cut else (80, 80, 120)
+                cv2.rectangle(frame, (x1, strip_h - 4 - bh), (x1 + bar_w - 1, strip_h - 4), color, -1)
+        bar_idx = (analysis_idx * n_bars) // n if n else 0
+        cur_x = 10 + bar_idx * bar_w
+        cv2.rectangle(frame, (cur_x, 0), (min(cur_x + 3, w - 10), strip_h), (255, 200, 100), -1)
+        cv2.putText(frame, "Temporal", (10, 14), font, 0.35, (180, 180, 200), 1)
+        # Cut badge
+        if (temporal_high_error_indices or []) and (analysis_idx + 1) in temporal_high_error_indices:
+            cv2.rectangle(frame, (w - 70, 4), (w - 6, strip_h - 4), (40, 60, 255), -1)
+            cv2.putText(frame, "CUT", (w - 62, 18), font, 0.45, (255, 255, 255), 1)
+        # Semantic from nearest keyframe (top-right below strip)
+        if semantic_keyframe_labels:
+            def _dist(kf):
+                kf_idx = kf.get("frame_index", 0)
+                return abs(kf_idx - analysis_idx)
+            nearest = min(semantic_keyframe_labels, key=_dist)
+            top = nearest.get("top_classes") or []
+            labels = [c.get("label", "") for c in top[:3] if c.get("label")]
+            if labels:
+                text = " | ".join(labels[:3])
+                cv2.rectangle(frame, (w - 220, strip_h + 2), (w - 6, strip_h + 28), (30, 30, 40), -1)
+                cv2.putText(frame, text[:35], (w - 212, strip_h + 20), font, 0.4, (200, 220, 255), 1)
 
     # Semi-transparent panel
     overlay = frame.copy()
@@ -199,6 +246,33 @@ def _draw_descriptor_title_card(
     )
 
 
+def _draw_end_card(
+    frame,
+    width: int,
+    height: int,
+    semantic_aggregated_top: Optional[list[dict]] = None,
+    num_cuts: int = 0,
+) -> None:
+    """Draw a short 'cohesive analysis complete' end card with semantic summary."""
+    import cv2
+    frame[:] = (28, 28, 38)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    margin = 32
+    y = height // 2 - 50
+    cv2.putText(frame, "AGI-JEPA Cohesive Analysis Complete", (margin, y), font, 0.8, (255, 220, 180), 2)
+    y += 44
+    cv2.putText(frame, "Temporal + Semantic + JEPA + Pixel", (margin, y), font, 0.5, (200, 200, 220), 1)
+    y += 32
+    if num_cuts > 0:
+        cv2.putText(frame, f"Scene changes detected: {num_cuts}", (margin, y), font, 0.5, (180, 200, 255), 1)
+        y += 28
+    if semantic_aggregated_top:
+        top_labels = [x.get("label", "") for x in semantic_aggregated_top[:8] if x.get("label")]
+        if top_labels:
+            cv2.putText(frame, "Top content: " + ", ".join(top_labels[:6]), (margin, y), font, 0.45, (220, 220, 255), 1)
+    cv2.putText(frame, "Use descriptor text for recreation or search", (margin, height - margin), font, 0.4, (140, 140, 170), 1)
+
+
 def render_video_with_overlay(
     video_id: str,
     jepa_summary: str,
@@ -221,6 +295,10 @@ def render_video_with_overlay(
     mod_tint_r: int = 0,
     mod_tint_g: int = 0,
     mod_tint_b: int = 0,
+    temporal_frame_errors: Optional[list[float]] = None,
+    temporal_high_error_indices: Optional[list[int]] = None,
+    semantic_keyframe_labels: Optional[list[dict]] = None,
+    semantic_aggregated_top: Optional[list[dict]] = None,
 ) -> Path:
     """
     Download the video (first max_duration_sec), draw overlay on each frame, write to out_path.
@@ -256,6 +334,7 @@ def render_video_with_overlay(
             cap.release()
             raise ValueError("Could not create output video")
 
+        total_frames_estimate = int(fps * max_duration_sec)
         if descriptor_text and descriptor_title_card_sec > 0:
             import numpy as np
             n_card_frames = int(fps * descriptor_title_card_sec)
@@ -264,6 +343,7 @@ def render_video_with_overlay(
                 _draw_descriptor_title_card(frame, descriptor_text, width, height)
                 writer.write(frame)
 
+        frame_index = 0
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -289,8 +369,26 @@ def render_video_with_overlay(
                 contrast,
                 edge_density,
                 dominant_colors or [],
+                frame_index=frame_index,
+                total_frames_estimate=total_frames_estimate,
+                temporal_frame_errors=temporal_frame_errors,
+                temporal_high_error_indices=temporal_high_error_indices,
+                semantic_keyframe_labels=semantic_keyframe_labels,
             )
             writer.write(frame)
+            frame_index += 1
+        # Optional end card when we have temporal/semantic data
+        has_content = (temporal_frame_errors and len(temporal_frame_errors) > 0) or (
+            semantic_aggregated_top and len(semantic_aggregated_top) > 0
+        )
+        if has_content:
+            import numpy as np
+            n_end_frames = int(fps * 3)
+            num_cuts = len(temporal_high_error_indices) if temporal_high_error_indices else 0
+            for _ in range(n_end_frames):
+                end_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                _draw_end_card(end_frame, width, height, semantic_aggregated_top, num_cuts)
+                writer.write(end_frame)
         cap.release()
         writer.release()
 

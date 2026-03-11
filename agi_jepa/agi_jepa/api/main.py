@@ -179,6 +179,20 @@ class VideoOverlayRequest(BaseModel):
     mod_tint_g: int = Field(0, ge=-50, le=50)
     mod_tint_b: int = Field(0, ge=-50, le=50)
     include_descriptor_card: bool = True
+    # Cohesive: temporal + semantic from content analysis (optional)
+    temporal_frame_errors: list[float] = Field(default_factory=list)
+    temporal_high_error_indices: list[int] = Field(default_factory=list)
+    semantic_keyframe_labels: list[dict] = Field(default_factory=list)
+    semantic_aggregated_top: list[dict] = Field(default_factory=list)
+    temporal_summary: str = ""
+    semantic_summary: str = ""
+
+
+class ContentAnalysisRequest(BaseModel):
+    """Request to analyze video content: temporal structure + semantic summary from frames."""
+    video_id: str
+    max_duration_sec: int = Field(45, ge=10, le=120)
+    max_frames: int = Field(30, ge=5, le=60)
 
 
 class DescriptorRequest(BaseModel):
@@ -215,7 +229,7 @@ def root():
 def api_root():
     return {
         "message": "AGI-JEPA API",
-        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/pixel_insights", "/api/youtube/encode", "/api/youtube/analyze", "/api/youtube/descriptor", "/api/youtube/video_with_overlay"],
+        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/pixel_insights", "/api/youtube/encode", "/api/youtube/analyze", "/api/youtube/analyze_content", "/api/youtube/descriptor", "/api/youtube/video_with_overlay"],
     }
 
 
@@ -547,6 +561,29 @@ def youtube_analyze(req: YoutubeAnalyzeRequest):
     )
 
 
+@app.post("/api/youtube/analyze_content")
+def youtube_analyze_content(req: ContentAnalysisRequest):
+    """
+    Analyze video content: temporal structure (frame-to-frame change, likely scene cuts)
+    and semantic summary (keyframe labels from a pretrained ResNet). Downloads the video
+    and extracts frames; requires yt-dlp, ffmpeg, torch, torchvision.
+    """
+    if not req.video_id or len(req.video_id) > 20:
+        raise HTTPException(400, "Invalid video_id")
+    try:
+        from .content_analysis import analyze_content
+        return analyze_content(
+            video_id=req.video_id,
+            max_duration_sec=req.max_duration_sec,
+            max_frames=req.max_frames,
+            device="cpu",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Content analysis error: {e}")
+
+
 @app.post("/api/youtube/descriptor")
 def youtube_descriptor(req: DescriptorRequest):
     """
@@ -609,6 +646,10 @@ def youtube_video_with_overlay(req: VideoOverlayRequest):
                 edge_density=req.edge_density,
                 dominant_colors=req.dominant_colors or [],
             )
+            if req.temporal_summary:
+                desc_text += " [Temporal: " + req.temporal_summary[:200] + ("…" if len(req.temporal_summary) > 200 else "") + "]"
+            if req.semantic_summary:
+                desc_text += " [Semantic: " + req.semantic_summary[:200] + ("…" if len(req.semantic_summary) > 200 else "") + "]"
             card_sec = 4.0
         out_path = render_video_with_overlay(
             video_id=req.video_id,
@@ -631,6 +672,10 @@ def youtube_video_with_overlay(req: VideoOverlayRequest):
             mod_tint_r=req.mod_tint_r,
             mod_tint_g=req.mod_tint_g,
             mod_tint_b=req.mod_tint_b,
+            temporal_frame_errors=req.temporal_frame_errors or None,
+            temporal_high_error_indices=req.temporal_high_error_indices or None,
+            semantic_keyframe_labels=req.semantic_keyframe_labels or None,
+            semantic_aggregated_top=req.semantic_aggregated_top or None,
         )
         return FileResponse(
             path=str(out_path),

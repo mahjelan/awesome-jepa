@@ -105,6 +105,13 @@ export default function App() {
     } catch { return [] }
   })
   const [tintPaletteChoice, setTintPaletteChoice] = useState<string>('')
+  const [contentAnalysis, setContentAnalysis] = useState<{
+    num_frames: number
+    temporal: { frame_errors: number[]; mean_error: number; high_error_frame_indices: number[]; summary: string }
+    semantic: { keyframe_labels: { frame_index: number; top_classes: { label: string; prob: number }[] }[]; aggregated_top: { label: string; count: number }[]; summary: string }
+  } | null>(null)
+  const [contentAnalysisLoading, setContentAnalysisLoading] = useState(false)
+  const [contentAnalysisError, setContentAnalysisError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -620,7 +627,7 @@ export default function App() {
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
               <span style={{ fontSize: '0.9rem' }}>Original YouTube video (not modified by JEPA)</span>
-              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); setPixelInsights(null); setPixelInsightsError(null); setVideoDescriptor(null); setDescriptorError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
+              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); setPixelInsights(null); setPixelInsightsError(null); setVideoDescriptor(null); setDescriptorError(null); setContentAnalysis(null); setContentAnalysisError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
             </div>
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 8, background: '#000' }}>
               <iframe
@@ -712,11 +719,43 @@ export default function App() {
               })()}
             </div>
             <div style={{ marginTop: '0.75rem' }}>
-              <button type="button" onClick={analyzeVideoWithJEPA} disabled={videoAnalysisLoading || !ytVideos.some((v) => v.id === previewVideoId)} style={{ marginBottom: '0.5rem' }}>
-                {videoAnalysisLoading ? 'Analyzing…' : 'Analyze with JEPA'}
-              </button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button type="button" onClick={analyzeVideoWithJEPA} disabled={videoAnalysisLoading || !ytVideos.some((v) => v.id === previewVideoId)}>
+                  {videoAnalysisLoading ? 'Analyzing…' : 'Analyze with JEPA'}
+                </button>
+                <button
+                  type="button"
+                  disabled={contentAnalysisLoading || !previewVideoId}
+                  onClick={async () => {
+                    if (!previewVideoId) return
+                    setContentAnalysisLoading(true)
+                    setContentAnalysisError(null)
+                    setContentAnalysis(null)
+                    try {
+                      const res = await fetch(`${API_BASE}/youtube/analyze_content`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ video_id: previewVideoId, max_duration_sec: 45, max_frames: 30 }),
+                      })
+                      if (!res.ok) {
+                        const t = await res.json().catch(() => ({}))
+                        throw new Error((t as { detail?: string }).detail ?? res.statusText)
+                      }
+                      const data = await res.json()
+                      setContentAnalysis(data)
+                    } catch (e) {
+                      setContentAnalysisError(e instanceof Error ? e.message : String(e))
+                    } finally {
+                      setContentAnalysisLoading(false)
+                    }
+                  }}
+                >
+                  {contentAnalysisLoading ? 'Analyzing content…' : 'Analyze content (temporal + semantic)'}
+                </button>
+              </div>
               {videoAnalysisError && <p className="error" style={{ marginTop: '0.25rem' }}>{videoAnalysisError}</p>}
-              {(videoAnalysis || pixelInsights) && (
+              {contentAnalysisError && <p className="error" style={{ marginTop: '0.25rem' }}>{contentAnalysisError}</p>}
+              {(videoAnalysis || pixelInsights || contentAnalysis) && (
                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 6, fontSize: '0.9rem' }}>
                   <strong>Results after analysis</strong>
                   {videoAnalysis && (
@@ -745,6 +784,53 @@ export default function App() {
                     </div>
                   )}
                   {pixelInsightsError && <p className="error" style={{ marginTop: 4 }}>{pixelInsightsError}</p>}
+                  {contentAnalysis && (
+                    <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+                      <strong>Content analysis (temporal + semantic)</strong>
+                      <p style={{ margin: '0.25rem 0', fontSize: '0.85rem' }}>{contentAnalysis.num_frames} frames analyzed.</p>
+                      <p style={{ margin: '0.25rem 0', fontSize: '0.85rem' }}><strong>Temporal:</strong> {contentAnalysis.temporal.summary}</p>
+                      {contentAnalysis.temporal.frame_errors.length > 0 && (
+                        <div style={{ marginTop: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem' }}>Frame-to-frame change (first 20): </span>
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 24, marginTop: 2 }}>
+                            {contentAnalysis.temporal.frame_errors.slice(0, 20).map((e, i) => {
+                              const maxE = Math.max(...contentAnalysis.temporal.frame_errors)
+                              return (
+                                <div
+                                  key={i}
+                                  title={`Frame ${i + 1}→${i + 2}: ${e.toFixed(2)}`}
+                                  style={{
+                                    flex: 1,
+                                    minWidth: 4,
+                                    height: `${Math.min(100, (e / (maxE || 1)) * 100)}%`,
+                                    background: contentAnalysis.temporal.high_error_frame_indices.includes(i + 1) ? 'rgba(251, 146, 60, 0.9)' : 'rgba(59, 130, 246, 0.6)',
+                                    borderRadius: 2,
+                                  }}
+                                />
+                              )
+                            })}
+                          </div>
+                          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Orange = likely scene/cut</span>
+                        </div>
+                      )}
+                      <p style={{ margin: '0.5rem 0 0.25rem 0', fontSize: '0.85rem' }}><strong>Semantic:</strong> {contentAnalysis.semantic.summary}</p>
+                      {contentAnalysis.semantic.keyframe_labels.length > 0 && (
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                          Keyframe labels:
+                          {contentAnalysis.semantic.keyframe_labels.map((kf, i) => (
+                            <div key={i} style={{ marginTop: 4 }}>
+                              Frame {kf.frame_index}: {kf.top_classes.map((c) => `${c.label} (${(c.prob * 100).toFixed(0)}%)`).join(', ')}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {contentAnalysis.semantic.aggregated_top.length > 0 && (
+                        <p style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+                          Aggregated: {contentAnalysis.semantic.aggregated_top.slice(0, 8).map((a) => `${a.label} (${a.count})`).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {(videoAnalysis || pixelInsights) && (
                     <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
                       <strong style={{ display: 'block', marginBottom: '0.5rem' }}>Modification palette</strong>
@@ -872,12 +958,15 @@ export default function App() {
                     >
                       Copy results (JEPA + pixel)
                     </button>
+                    <p style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: 4 }}>
+                      Run &quot;Analyze content&quot; first to include temporal timeline and semantic labels in the video.
+                    </p>
                     <button
                       type="button"
                       style={{ fontSize: '0.8rem' }}
-                      disabled={overlayDownloadLoading || !previewVideoId || !videoAnalysis}
+                      disabled={overlayDownloadLoading || !previewVideoId}
                       onClick={async () => {
-                        if (!previewVideoId || !videoAnalysis) return
+                        if (!previewVideoId) return
                         setOverlayDownloadLoading(true)
                         setOverlayDownloadError(null)
                         try {
@@ -888,11 +977,11 @@ export default function App() {
                               video_id: previewVideoId,
                               title: ytVideos.find((v) => v.id === previewVideoId)?.title ?? '',
                               channel: ytVideos.find((v) => v.id === previewVideoId)?.channelTitle ?? '',
-                              summary: videoAnalysis.summary,
-                              latent_norm: videoAnalysis.latent_norm,
-                              predicted_next_norm: videoAnalysis.predicted_next_norm ?? null,
-                              latent_preview: videoAnalysis.latent_preview,
-                              predicted_next_preview: videoAnalysis.predicted_next_preview ?? null,
+                              summary: videoAnalysis?.summary ?? '',
+                              latent_norm: videoAnalysis?.latent_norm ?? 0,
+                              predicted_next_norm: videoAnalysis?.predicted_next_norm ?? null,
+                              latent_preview: videoAnalysis?.latent_preview ?? [],
+                              predicted_next_preview: videoAnalysis?.predicted_next_preview ?? null,
                               pixel_insight_summary: pixelInsights?.insight_summary ?? '',
                               brightness: pixelInsights?.brightness ?? 0.5,
                               contrast: pixelInsights?.contrast ?? 0.2,
@@ -906,6 +995,12 @@ export default function App() {
                               mod_tint_r: modTintR,
                               mod_tint_g: modTintG,
                               mod_tint_b: modTintB,
+                              temporal_frame_errors: contentAnalysis?.temporal?.frame_errors ?? [],
+                              temporal_high_error_indices: contentAnalysis?.temporal?.high_error_frame_indices ?? [],
+                              semantic_keyframe_labels: contentAnalysis?.semantic?.keyframe_labels ?? [],
+                              semantic_aggregated_top: contentAnalysis?.semantic?.aggregated_top ?? [],
+                              temporal_summary: contentAnalysis?.temporal?.summary ?? '',
+                              semantic_summary: contentAnalysis?.semantic?.summary ?? '',
                             }),
                           })
                           if (!res.ok) {
