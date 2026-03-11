@@ -376,12 +376,234 @@ export default function App() {
 
   return (
     <>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
       <h1>AGI-JEPA</h1>
       <p style={{ margin: 0, color: '#9ca3af' }}>
         Joint Embedding Predictive Architecture — config, training, and planning.
       </p>
 
-      <section className="card">
+      <section className="card" style={{ order: 1 }}>
+        <h2>Backend config</h2>
+        {configError && <p className="error">{configError}</p>}
+        {config && (
+          <pre className="pre">
+            latent_dim={config.latent_dim}  plan_horizon={config.plan_horizon}
+            batch_size={config.batch_size}  lr={config.learning_rate}
+            obs_dim={config.obs_dim}  action_dim={config.action_dim}
+          </pre>
+        )}
+      </section>
+
+      <section className="card" style={{ order: 2 }}>
+        <h2>Train (JEPA)</h2>
+        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
+          Run encoder + predictor training for a few steps (dummy data).
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <label>
+            Steps <input
+              type="number"
+              min={1}
+              max={2000}
+              value={trainSteps}
+              onChange={(e) => setTrainSteps(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Batch size{' '}
+            <input
+              type="number"
+              min={1}
+              max={128}
+              value={trainBatch}
+              onChange={(e) => setTrainBatch(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            LR{' '}
+            <input
+              type="number"
+              step="1e-5"
+              min={1e-5}
+              max={0.1}
+              value={trainLr}
+              onChange={(e) => setTrainLr(Number(e.target.value))}
+            />
+          </label>
+          <button onClick={runTrain} disabled={training || !config}>
+            {training ? 'Training…' : 'Run training'}
+          </button>
+        </div>
+        {trainError && <p className="error">{trainError}</p>}
+        {trainResult && (
+          <p className="success">
+            Done: {trainResult.steps} steps, final loss = {trainResult.final_loss.toFixed(6)}
+          </p>
+        )}
+        {trainResult && trainResult.loss_history.length > 0 && (
+          <p className="pre" style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>
+            Loss curve (first/last 5):{' '}
+            {[
+              ...trainResult.loss_history.slice(0, 5),
+              '…',
+              ...trainResult.loss_history.slice(-5),
+            ].join(', ')}
+          </p>
+        )}
+      </section>
+
+      <section className="card" style={{ order: 3 }}>
+        <h2>Train on YouTube (JEPA from videos)</h2>
+        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
+          Fetch videos via YouTube API (search or trending), form consecutive pairs (video i → video i+1), and train the JEPA predictor to predict the next video&apos;s latent from the current one.
+        </p>
+        {ytKeyConfigured === false && (
+          <p className="error" style={{ marginBottom: '0.5rem' }}>YOUTUBE_API_KEY not set. Set it in the API environment and restart the server (see README or agi_jepa/.env.example).</p>
+        )}
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <input type="checkbox" checked={ytTrainTrending} onChange={(e) => setYtTrainTrending(e.target.checked)} />
+            Use trending
+          </label>
+          {!ytTrainTrending && (
+            <input
+              type="text"
+              value={ytTrainQuery}
+              onChange={(e) => setYtTrainQuery(e.target.value)}
+              placeholder="Search query"
+              style={{ minWidth: '160px' }}
+            />
+          )}
+          <label>Steps <input type="number" min={5} max={500} value={ytTrainSteps} onChange={(e) => setYtTrainSteps(Number(e.target.value))} /></label>
+          <label>Batch <input type="number" min={1} max={32} value={ytTrainBatch} onChange={(e) => setYtTrainBatch(Number(e.target.value))} /></label>
+          <button onClick={trainOnYouTube} disabled={ytTrainLoading || !config}>
+            {ytTrainLoading ? 'Training on YouTube…' : 'Train on YouTube'}
+          </button>
+        </div>
+        {ytTrainError && <p className="error">{ytTrainError}</p>}
+        {ytTrainResult && (
+          <p className="success">
+            Done: {ytTrainResult.steps} steps, final loss = {ytTrainResult.final_loss.toFixed(6)}
+          </p>
+        )}
+      </section>
+
+      <section className="card" style={{ order: 4 }}>
+        <h2>Plan</h2>
+        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
+          Value-guided action sequence from a random latent (world model + value head).
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <label>
+            Horizon{' '}
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={planHorizon}
+              onChange={(e) => setPlanHorizon(Number(e.target.value))}
+            />
+          </label>
+          <button onClick={runPlan} disabled={planning || !config}>
+            {planning ? 'Planning…' : 'Run plan'}
+          </button>
+        </div>
+        {planError && <p className="error">{planError}</p>}
+        {planResult && (
+          <p className="success">
+            Got action sequence shape (1, {planHorizon}, {config?.action_dim ?? '?'})
+          </p>
+        )}
+        {planResult && planResult.actions[0] && (
+          <pre className="pre" style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>
+            First 2 steps: {JSON.stringify(planResult.actions[0].slice(0, 2))}
+          </pre>
+        )}
+      </section>
+
+      <section className="card" style={{ order: 5 }}>
+        <h2>YouTube → AGI (Algorythm)</h2>
+        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
+          Search or load trending videos (YouTube Data API, same as <code>aixApp/algorythm</code>), then encode them into JEPA latents.
+        </p>
+        {ytKeyConfigured === false && (
+          <div style={{ padding: '0.75rem', background: 'rgba(248, 113, 113, 0.15)', borderRadius: 6, marginBottom: '0.75rem', fontSize: '0.9rem' }}>
+            <strong>YOUTUBE_API_KEY not set.</strong> Restart the API with the key in the environment:
+            <pre className="pre" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>{'Windows (PowerShell):\n  cd agi_jepa\n  $env:YOUTUBE_API_KEY = "your_key"\n  python -m uvicorn agi_jepa.api.main:app --port 8000\n\nMac/Linux:\n  cd agi_jepa\n  export YOUTUBE_API_KEY=your_key\n  python -m uvicorn agi_jepa.api.main:app --port 8000'}</pre>
+            Get a key: Google Cloud Console → APIs &amp; Services → Credentials → enable YouTube Data API v3.
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <input
+            type="text"
+            value={ytQuery}
+            onChange={(e) => setYtQuery(e.target.value)}
+            placeholder="Search query"
+            style={{ minWidth: '180px' }}
+          />
+          <button onClick={youtubeSearch} disabled={ytLoading || !config}>
+            {ytLoading ? 'Loading…' : 'Search'}
+          </button>
+          <button onClick={youtubeTrending} disabled={ytLoading || !config}>
+            Trending
+          </button>
+        </div>
+        {ytError && <p className="error">{ytError}</p>}
+        {ytVideos.length > 0 && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.9rem' }}>{ytVideos.length} videos — select then Encode</span>
+              <button onClick={encodeSelectedVideos} disabled={encodeVideoLoading || selectedVideoIds.size === 0}>
+                {encodeVideoLoading ? 'Encoding…' : `Encode in JEPA (${selectedVideoIds.size})`}
+              </button>
+            </div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '320px', overflowY: 'auto' }}>
+              {ytVideos.slice(0, 15).map((v) => (
+                <li
+                  key={v.id}
+                  style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    padding: '0.4rem 0.5rem',
+                    marginBottom: '0.25rem',
+                    background: selectedVideoIds.has(v.id) ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0,0,0,0.15)',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => toggleVideoSelection(v.id)}
+                >
+                  {(v.thumbnails?.medium?.url || v.thumbnails?.default?.url) && (
+                    <img
+                      src={v.thumbnails.medium?.url || v.thumbnails.default?.url}
+                      alt=""
+                      style={{ width: 80, height: 45, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ fontSize: '0.85rem' }}>{v.title.slice(0, 50)}{v.title.length > 50 ? '…' : ''}</strong>
+                    {v.channelTitle && <span style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'block' }}>{v.channelTitle}</span>}
+                    <button
+                      type="button"
+                      onClick={(ev) => { ev.stopPropagation(); setPreviewVideoId(v.id); }}
+                      style={{ marginTop: '0.25rem', fontSize: '0.75rem', padding: '0.2rem 0.4rem' }}
+                    >
+                      Play
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {encodeVideoError && <p className="error">{encodeVideoError}</p>}
+            {encodeVideoResult && (
+              <p className="success" style={{ marginTop: '0.5rem' }}>
+                Encoded {encodeVideoResult.latents.length} video(s) → latents shape [{encodeVideoResult.latents.length}, {config?.latent_dim ?? '?'}]
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="card" style={{ order: 6 }}>
         <h2>Output</h2>
         <p style={{ margin: '0 0 0.5rem 0', color: '#9ca3af', fontSize: '0.9rem' }}>
           Latest results (text) and video preview from the AGI pipeline.
@@ -803,226 +1025,7 @@ export default function App() {
         )}
       </section>
 
-      <section className="card">
-        <h2>Backend config</h2>
-        {configError && <p className="error">{configError}</p>}
-        {config && (
-          <pre className="pre">
-            latent_dim={config.latent_dim}  plan_horizon={config.plan_horizon}
-            batch_size={config.batch_size}  lr={config.learning_rate}
-            obs_dim={config.obs_dim}  action_dim={config.action_dim}
-          </pre>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Train (JEPA)</h2>
-        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
-          Run encoder + predictor training for a few steps (dummy data).
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <label>
-            Steps <input
-              type="number"
-              min={1}
-              max={2000}
-              value={trainSteps}
-              onChange={(e) => setTrainSteps(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Batch size{' '}
-            <input
-              type="number"
-              min={1}
-              max={128}
-              value={trainBatch}
-              onChange={(e) => setTrainBatch(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            LR{' '}
-            <input
-              type="number"
-              step="1e-5"
-              min={1e-5}
-              max={0.1}
-              value={trainLr}
-              onChange={(e) => setTrainLr(Number(e.target.value))}
-            />
-          </label>
-          <button onClick={runTrain} disabled={training || !config}>
-            {training ? 'Training…' : 'Run training'}
-          </button>
-        </div>
-        {trainError && <p className="error">{trainError}</p>}
-        {trainResult && (
-          <p className="success">
-            Done: {trainResult.steps} steps, final loss = {trainResult.final_loss.toFixed(6)}
-          </p>
-        )}
-        {trainResult && trainResult.loss_history.length > 0 && (
-          <p className="pre" style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>
-            Loss curve (first/last 5):{' '}
-            {[
-              ...trainResult.loss_history.slice(0, 5),
-              '…',
-              ...trainResult.loss_history.slice(-5),
-            ].join(', ')}
-          </p>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Train on YouTube (JEPA from videos)</h2>
-        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
-          Fetch videos via YouTube API (search or trending), form consecutive pairs (video i → video i+1), and train the JEPA predictor to predict the next video&apos;s latent from the current one.
-        </p>
-        {ytKeyConfigured === false && (
-          <p className="error" style={{ marginBottom: '0.5rem' }}>YOUTUBE_API_KEY not set. Set it in the API environment and restart the server (see README or agi_jepa/.env.example).</p>
-        )}
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <input type="checkbox" checked={ytTrainTrending} onChange={(e) => setYtTrainTrending(e.target.checked)} />
-            Use trending
-          </label>
-          {!ytTrainTrending && (
-            <input
-              type="text"
-              value={ytTrainQuery}
-              onChange={(e) => setYtTrainQuery(e.target.value)}
-              placeholder="Search query"
-              style={{ minWidth: '160px' }}
-            />
-          )}
-          <label>Steps <input type="number" min={5} max={500} value={ytTrainSteps} onChange={(e) => setYtTrainSteps(Number(e.target.value))} /></label>
-          <label>Batch <input type="number" min={1} max={32} value={ytTrainBatch} onChange={(e) => setYtTrainBatch(Number(e.target.value))} /></label>
-          <button onClick={trainOnYouTube} disabled={ytTrainLoading || !config}>
-            {ytTrainLoading ? 'Training on YouTube…' : 'Train on YouTube'}
-          </button>
-        </div>
-        {ytTrainError && <p className="error">{ytTrainError}</p>}
-        {ytTrainResult && (
-          <p className="success">
-            Done: {ytTrainResult.steps} steps, final loss = {ytTrainResult.final_loss.toFixed(6)}
-          </p>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Plan</h2>
-        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
-          Value-guided action sequence from a random latent (world model + value head).
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <label>
-            Horizon{' '}
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={planHorizon}
-              onChange={(e) => setPlanHorizon(Number(e.target.value))}
-            />
-          </label>
-          <button onClick={runPlan} disabled={planning || !config}>
-            {planning ? 'Planning…' : 'Run plan'}
-          </button>
-        </div>
-        {planError && <p className="error">{planError}</p>}
-        {planResult && (
-          <p className="success">
-            Got action sequence shape (1, {planHorizon}, {config?.action_dim ?? '?'})
-          </p>
-        )}
-        {planResult && planResult.actions[0] && (
-          <pre className="pre" style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>
-            First 2 steps: {JSON.stringify(planResult.actions[0].slice(0, 2))}
-          </pre>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>YouTube → AGI (Algorythm)</h2>
-        <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
-          Search or load trending videos (YouTube Data API, same as <code>aixApp/algorythm</code>), then encode them into JEPA latents.
-        </p>
-        {ytKeyConfigured === false && (
-          <div style={{ padding: '0.75rem', background: 'rgba(248, 113, 113, 0.15)', borderRadius: 6, marginBottom: '0.75rem', fontSize: '0.9rem' }}>
-            <strong>YOUTUBE_API_KEY not set.</strong> Restart the API with the key in the environment:
-            <pre className="pre" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>{'Windows (PowerShell):\n  cd agi_jepa\n  $env:YOUTUBE_API_KEY = "your_key"\n  python -m uvicorn agi_jepa.api.main:app --port 8000\n\nMac/Linux:\n  cd agi_jepa\n  export YOUTUBE_API_KEY=your_key\n  python -m uvicorn agi_jepa.api.main:app --port 8000'}</pre>
-            Get a key: Google Cloud Console → APIs &amp; Services → Credentials → enable YouTube Data API v3.
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <input
-            type="text"
-            value={ytQuery}
-            onChange={(e) => setYtQuery(e.target.value)}
-            placeholder="Search query"
-            style={{ minWidth: '180px' }}
-          />
-          <button onClick={youtubeSearch} disabled={ytLoading || !config}>
-            {ytLoading ? 'Loading…' : 'Search'}
-          </button>
-          <button onClick={youtubeTrending} disabled={ytLoading || !config}>
-            Trending
-          </button>
-        </div>
-        {ytError && <p className="error">{ytError}</p>}
-        {ytVideos.length > 0 && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.9rem' }}>{ytVideos.length} videos — select then Encode</span>
-              <button onClick={encodeSelectedVideos} disabled={encodeVideoLoading || selectedVideoIds.size === 0}>
-                {encodeVideoLoading ? 'Encoding…' : `Encode in JEPA (${selectedVideoIds.size})`}
-              </button>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '320px', overflowY: 'auto' }}>
-              {ytVideos.slice(0, 15).map((v) => (
-                <li
-                  key={v.id}
-                  style={{
-                    display: 'flex',
-                    gap: '0.5rem',
-                    padding: '0.4rem 0.5rem',
-                    marginBottom: '0.25rem',
-                    background: selectedVideoIds.has(v.id) ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0,0,0,0.15)',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => toggleVideoSelection(v.id)}
-                >
-                  {(v.thumbnails?.medium?.url || v.thumbnails?.default?.url) && (
-                    <img
-                      src={v.thumbnails.medium?.url || v.thumbnails.default?.url}
-                      alt=""
-                      style={{ width: 80, height: 45, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
-                    />
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <strong style={{ fontSize: '0.85rem' }}>{v.title.slice(0, 50)}{v.title.length > 50 ? '…' : ''}</strong>
-                    {v.channelTitle && <span style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'block' }}>{v.channelTitle}</span>}
-                    <button
-                      type="button"
-                      onClick={(ev) => { ev.stopPropagation(); setPreviewVideoId(v.id); }}
-                      style={{ marginTop: '0.25rem', fontSize: '0.75rem', padding: '0.2rem 0.4rem' }}
-                    >
-                      Play
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {encodeVideoError && <p className="error">{encodeVideoError}</p>}
-            {encodeVideoResult && (
-              <p className="success" style={{ marginTop: '0.5rem' }}>
-                Encoded {encodeVideoResult.latents.length} video(s) → latents shape [{encodeVideoResult.latents.length}, {config?.latent_dim ?? '?'}]
-              </p>
-            )}
-          </>
-        )}
-      </section>
+      </div>
     </>
   )
 }
