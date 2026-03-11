@@ -1,0 +1,54 @@
+# AGI-JEPA: Unified JEPA World Model Stack
+
+Minimal, extensible implementation of an **AGI-oriented** stack that integrates ideas from the [awesome-jepa](https://github.com/gauravfs-14/awesome-jepa) paper list: Joint Embedding Predictive Architecture (JEPA), hierarchical prediction, probabilistic world models, and value-guided planning.
+
+## Relation to awesome-jepa
+
+This package is the **implementation scaffold** for the architecture described in the repo root’s [AGI_MODEL_DESIGN.md](../AGI_MODEL_DESIGN.md). The 86+ papers in the main README (JEPA, H-JEPA, VJEPA, VL-JEPA, value-guided planning, Drive-JEPA, etc.) are the specification; this code provides:
+
+- **Encoder** — map observations to latent embeddings (extensible to vision, language, multimodal).
+- **Predictor** — JEPA-style prediction in latent space (no pixel/token reconstruction).
+- **World model** — latent dynamics and rollouts (VJEPA-style).
+- **Planner** — value-guided action selection using world-model rollouts.
+
+## Install
+
+From the **awesome-jepa** repo root:
+
+```bash
+pip install -e agi_jepa
+# or: pip install agi_jepa/requirements.txt && pip install -e agi_jepa
+```
+
+## Usage
+
+```python
+from agi_jepa import Encoder, Predictor, WorldModel, Planner
+from agi_jepa.config import AGIJEPAConfig
+
+config = AGIJEPAConfig()
+encoder = Encoder(config)
+predictor = Predictor(config)
+world_model = WorldModel(config)
+planner = Planner(config)
+
+# Encode context observations
+context_latents = encoder(context_obs)
+
+# Predict future latents (JEPA)
+predicted_latents = predictor(context_latents, target_obs=None)
+
+# World model rollout (e.g. for planning)
+rollout_latents = world_model.rollout(context_latents, actions, horizon=10)
+
+# Value-guided action sequence
+actions = planner.plan(context_latents, goal=None, horizon=5)
+```
+
+## Training
+
+```bash
+python -m agi_jepa.train --steps 1000 --batch_size 32 --lr 1e-4
+```
+
+See [AGI_MODEL_DESIGN.md](../AGI_MODEL_DESIGN.md) for the high-level design and mapping to papers in the awesome-jepa list.
