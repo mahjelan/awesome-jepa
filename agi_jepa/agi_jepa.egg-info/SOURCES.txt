@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+agi_jepa/__init__.py
+agi_jepa/config.py
+agi_jepa/encoder.py
+agi_jepa/planner.py
+agi_jepa/predictor.py
+agi_jepa/train.py
+agi_jepa/world_model.py
+agi_jepa.egg-info/PKG-INFO
+agi_jepa.egg-info/SOURCES.txt
+agi_jepa.egg-info/dependency_links.txt
+agi_jepa.egg-info/requires.txt
+agi_jepa.egg-info/top_level.txt

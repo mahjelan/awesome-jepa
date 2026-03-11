@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: agi-jepa
+Version: 0.1.0
+Summary: Unified JEPA world model stack — AGI integration for awesome-jepa
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.0.0
+Requires-Dist: numpy>=1.24.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+
 # AGI-JEPA: Unified JEPA World Model Stack
 
 Minimal, extensible implementation of an **AGI-oriented** stack that integrates ideas from the [awesome-jepa](https://github.com/gauravfs-14/awesome-jepa) paper list: Joint Embedding Predictive Architecture (JEPA), hierarchical prediction, probabilistic world models, and value-guided planning.
@@ -11,37 +24,13 @@ This package is the **implementation scaffold** for the architecture described i
 - **World model** — latent dynamics and rollouts (VJEPA-style).
 - **Planner** — value-guided action selection using world-model rollouts.
 
-## Install and run
-
-**Option A — Install the package (recommended)**
+## Install
 
 From the **awesome-jepa** repo root:
 
 ```bash
 pip install -e agi_jepa
-```
-
-Then run training from anywhere:
-
-```bash
-python -m agi_jepa.train --steps 1000 --batch_size 32 --lr 1e-4
-```
-
-**Option B — Run without installing**
-
-From the **awesome-jepa** repo root, install deps then run the script:
-
-```bash
-pip install torch numpy
-python agi_jepa/run_train.py
-```
-
-Or from inside `agi_jepa`:
-
-```bash
-cd agi_jepa
-pip install torch numpy
-python run_train.py
+# or: pip install agi_jepa/requirements.txt && pip install -e agi_jepa
 ```
 
 ## Usage
@@ -69,12 +58,10 @@ rollout_latents = world_model.rollout(context_latents, actions, horizon=10)
 actions = planner.plan(context_latents, goal=None, horizon=5)
 ```
 
-## Training (after install)
+## Training
 
 ```bash
 python -m agi_jepa.train --steps 1000 --batch_size 32 --lr 1e-4
 ```
-
-Arguments: `--steps`, `--batch_size`, `--lr`, `--device` (e.g. `cuda`).
 
 See [AGI_MODEL_DESIGN.md](../AGI_MODEL_DESIGN.md) for the high-level design and mapping to papers in the awesome-jepa list.
