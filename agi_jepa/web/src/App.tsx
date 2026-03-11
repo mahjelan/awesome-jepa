@@ -61,6 +61,7 @@ export default function App() {
   const [ytTrainLoading, setYtTrainLoading] = useState(false)
   const [ytTrainResult, setYtTrainResult] = useState<TrainResult | null>(null)
   const [ytTrainError, setYtTrainError] = useState<string | null>(null)
+  const [ytKeyConfigured, setYtKeyConfigured] = useState<boolean | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -84,6 +85,14 @@ export default function App() {
       )
       .catch((e) => setConfigError(e instanceof Error ? e.message : 'Backend not reachable. Start it: cd agi_jepa && python -m uvicorn agi_jepa.api.main:app --port 8000'))
   }, [])
+
+  useEffect(() => {
+    if (!config) return
+    fetch(`${API_BASE}/youtube/status`)
+      .then((r) => r.ok ? r.json() : { configured: false })
+      .then((data: { configured?: boolean }) => setYtKeyConfigured(!!data?.configured))
+      .catch(() => setYtKeyConfigured(false))
+  }, [config])
 
   async function runTrain() {
     setTraining(true)
@@ -339,6 +348,9 @@ export default function App() {
         <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
           Fetch videos via YouTube API (search or trending), form consecutive pairs (video i → video i+1), and train the JEPA predictor to predict the next video&apos;s latent from the current one.
         </p>
+        {ytKeyConfigured === false && (
+          <p className="error" style={{ marginBottom: '0.5rem' }}>YOUTUBE_API_KEY not set. Set it in the API environment and restart the server (see README or agi_jepa/.env.example).</p>
+        )}
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <input type="checkbox" checked={ytTrainTrending} onChange={(e) => setYtTrainTrending(e.target.checked)} />
@@ -405,9 +417,13 @@ export default function App() {
         <p style={{ margin: '0 0 0.75rem 0', color: '#9ca3af' }}>
           Search or load trending videos (YouTube Data API, same as <code>aixApp/algorythm</code>), then encode them into JEPA latents.
         </p>
-        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: '#9ca3af' }}>
-          Set <code>YOUTUBE_API_KEY</code> in the backend environment.
-        </p>
+        {ytKeyConfigured === false && (
+          <div style={{ padding: '0.75rem', background: 'rgba(248, 113, 113, 0.15)', borderRadius: 6, marginBottom: '0.75rem', fontSize: '0.9rem' }}>
+            <strong>YOUTUBE_API_KEY not set.</strong> Restart the API with the key in the environment:
+            <pre className="pre" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>{'Windows (PowerShell):\n  cd agi_jepa\n  $env:YOUTUBE_API_KEY = "your_key"\n  python -m uvicorn agi_jepa.api.main:app --port 8000\n\nMac/Linux:\n  cd agi_jepa\n  export YOUTUBE_API_KEY=your_key\n  python -m uvicorn agi_jepa.api.main:app --port 8000'}</pre>
+            Get a key: Google Cloud Console → APIs &amp; Services → Credentials → enable YouTube Data API v3.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
           <input
             type="text"

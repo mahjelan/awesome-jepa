@@ -340,6 +340,17 @@ def plan(req: PlanRequest):
 
 # --- YouTube (Algorythm integration) ---
 
+@app.get("/api/youtube/status")
+def youtube_status():
+    """Return whether YOUTUBE_API_KEY is set (for UI to show setup instructions)."""
+    import os
+    key = (os.environ.get("YOUTUBE_API_KEY") or "").strip()
+    return {
+        "configured": bool(key),
+        "message": None if key else "Set YOUTUBE_API_KEY in the environment before starting the API. See README or .env.example.",
+    }
+
+
 @app.get("/api/youtube/search")
 def youtube_search(q: str = "", max_results: int = 20, region_code: Optional[str] = None):
     """Search YouTube (same API pattern as aixApp/algorythm). Requires YOUTUBE_API_KEY."""

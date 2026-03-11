@@ -97,7 +97,29 @@ python -m uvicorn agi_jepa.api.main:app --reload --port 8000
 
 Or from repo root: `python agi_jepa/run_api.py`
 
-**Optional — YouTube (Algorythm-style):** Set `YOUTUBE_API_KEY` in the environment before starting the API to enable the "YouTube → AGI" section (search, trending, encode video metadata into JEPA latents). Same API pattern as `aixApp/algorythm`.
+**YouTube (search, trending, encode, train on videos):** Set `YOUTUBE_API_KEY` before starting the API.
+
+- **Windows (PowerShell):**
+  ```powershell
+  cd agi_jepa
+  $env:YOUTUBE_API_KEY = "your_api_key_here"
+  python -m uvicorn agi_jepa.api.main:app --reload --port 8000
+  ```
+- **Windows (cmd):**
+  ```cmd
+  cd agi_jepa
+  set YOUTUBE_API_KEY=your_api_key_here
+  python -m uvicorn agi_jepa.api.main:app --reload --port 8000
+  ```
+- **Unix / Mac / Linux:**
+  ```bash
+  cd agi_jepa
+  export YOUTUBE_API_KEY=your_api_key_here
+  python -m uvicorn agi_jepa.api.main:app --reload --port 8000
+  ```
+- Or use a `.env` file: copy `agi_jepa/.env.example` to `agi_jepa/.env`, add your key, then load it (e.g. `pip install python-dotenv` and in code load dotenv before starting uvicorn, or use a tool that injects env from `.env`).
+
+Get a key: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → create API key → enable **YouTube Data API v3**.
 
 **3. In another terminal, run the React app:**
 
