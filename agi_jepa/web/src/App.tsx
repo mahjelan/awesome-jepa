@@ -62,6 +62,9 @@ export default function App() {
   const [ytTrainResult, setYtTrainResult] = useState<TrainResult | null>(null)
   const [ytTrainError, setYtTrainError] = useState<string | null>(null)
   const [ytKeyConfigured, setYtKeyConfigured] = useState<boolean | null>(null)
+  // Output: latest result text + video to show in GUI
+  const [outputLines, setOutputLines] = useState<string[]>([])
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -114,6 +117,7 @@ export default function App() {
       }
       const data: TrainResult = await res.json()
       setTrainResult(data)
+      setOutputLines((prev) => [...prev, `Training: ${data.steps} steps, final loss ${data.final_loss.toFixed(6)}`])
     } catch (e) {
       setTrainError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -194,6 +198,7 @@ export default function App() {
       }
       const data: TrainResult = await res.json()
       setYtTrainResult(data)
+      setOutputLines((prev) => [...prev, `Train on YouTube: ${data.steps} steps, final loss ${data.final_loss.toFixed(6)}`])
     } catch (e) {
       setYtTrainError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -232,6 +237,7 @@ export default function App() {
       }
       const data = await res.json()
       setEncodeVideoResult(data)
+      setOutputLines((prev) => [...prev, `Encoded ${data.latents.length} video(s) → JEPA latents`])
     } catch (e) {
       setEncodeVideoError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -259,6 +265,7 @@ export default function App() {
       }
       const data: PlanResult = await res.json()
       setPlanResult(data)
+      setOutputLines((prev) => [...prev, `Plan: ${planHorizon}-step action sequence`])
     } catch (e) {
       setPlanError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -272,6 +279,41 @@ export default function App() {
       <p style={{ margin: 0, color: '#9ca3af' }}>
         Joint Embedding Predictive Architecture — config, training, and planning.
       </p>
+
+      <section className="card">
+        <h2>Output</h2>
+        <p style={{ margin: '0 0 0.5rem 0', color: '#9ca3af', fontSize: '0.9rem' }}>
+          Latest results (text) and video preview from the AGI pipeline.
+        </p>
+        {outputLines.length > 0 && (
+          <>
+            <pre className="pre" style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 6, marginBottom: '0.75rem', maxHeight: '120px', overflowY: 'auto' }}>
+              {outputLines.slice(-10).join('\n')}
+            </pre>
+            <button type="button" onClick={() => setOutputLines([])} style={{ fontSize: '0.8rem', marginBottom: '0.5rem' }}>Clear output</button>
+          </>
+        )}
+        {previewVideoId && (
+          <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+              <span style={{ fontSize: '0.9rem' }}>Video</span>
+              <button type="button" onClick={() => setPreviewVideoId(null)} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
+            </div>
+            <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 8, background: '#000' }}>
+              <iframe
+                title="YouTube preview"
+                src={`https://www.youtube.com/embed/${previewVideoId}?autoplay=0`}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        )}
+        {outputLines.length === 0 && !previewVideoId && (
+          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Run training, plan, or encode YouTube videos to see output here. Click a video in the list to play it.</p>
+        )}
+      </section>
 
       <section className="card">
         <h2>Backend config</h2>
@@ -448,11 +490,13 @@ export default function App() {
                 {encodeVideoLoading ? 'Encoding…' : `Encode in JEPA (${selectedVideoIds.size})`}
               </button>
             </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '240px', overflowY: 'auto' }}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '320px', overflowY: 'auto' }}>
               {ytVideos.slice(0, 15).map((v) => (
                 <li
                   key={v.id}
                   style={{
+                    display: 'flex',
+                    gap: '0.5rem',
                     padding: '0.4rem 0.5rem',
                     marginBottom: '0.25rem',
                     background: selectedVideoIds.has(v.id) ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0,0,0,0.15)',
@@ -461,8 +505,24 @@ export default function App() {
                   }}
                   onClick={() => toggleVideoSelection(v.id)}
                 >
-                  <strong style={{ fontSize: '0.85rem' }}>{v.title.slice(0, 50)}{v.title.length > 50 ? '…' : ''}</strong>
-                  {v.channelTitle && <span style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'block' }}>{v.channelTitle}</span>}
+                  {(v.thumbnails?.medium?.url || v.thumbnails?.default?.url) && (
+                    <img
+                      src={v.thumbnails.medium?.url || v.thumbnails.default?.url}
+                      alt=""
+                      style={{ width: 80, height: 45, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ fontSize: '0.85rem' }}>{v.title.slice(0, 50)}{v.title.length > 50 ? '…' : ''}</strong>
+                    {v.channelTitle && <span style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'block' }}>{v.channelTitle}</span>}
+                    <button
+                      type="button"
+                      onClick={(ev) => { ev.stopPropagation(); setPreviewVideoId(v.id); }}
+                      style={{ marginTop: '0.25rem', fontSize: '0.75rem', padding: '0.2rem 0.4rem' }}
+                    >
+                      Play
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

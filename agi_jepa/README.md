@@ -121,6 +121,12 @@ Or from repo root: `python agi_jepa/run_api.py`
 
 Get a key: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → create API key → enable **YouTube Data API v3**.
 
+**If you get "403 Forbidden":**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/library) → search **"YouTube Data API v3"** → open it → click **Enable** (for the same project as your API key).
+2. If the key has **Application restrictions**, use "None" for testing, or add your server (e.g. "IP addresses" for the machine running the API).
+3. Under **API restrictions**, either "Don't restrict key" or ensure **YouTube Data API v3** is in the allowed list.
+4. Wait a minute after enabling the API, then try again.
+
 **3. In another terminal, run the React app:**
 
 ```bash

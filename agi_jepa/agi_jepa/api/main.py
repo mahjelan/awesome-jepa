@@ -5,8 +5,21 @@ Or from repo root: python agi_jepa/run_api.py
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Optional
+
+# Load .env so YOUTUBE_API_KEY can be set in agi_jepa/.env without exporting manually
+try:
+    from dotenv import load_dotenv
+    # Try outer agi_jepa folder (where .env.example lives), then current working directory
+    _api_dir = Path(__file__).resolve().parent
+    _outer_agi = _api_dir.parent.parent  # agi_jepa/agi_jepa/api -> agi_jepa (outer)
+    load_dotenv(_outer_agi / ".env")
+    load_dotenv()  # cwd .env
+except ImportError:
+    pass  # python-dotenv not installed; use system env only
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
