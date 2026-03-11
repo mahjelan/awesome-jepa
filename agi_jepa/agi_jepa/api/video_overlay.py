@@ -13,6 +13,41 @@ from typing import Any, Optional
 DEFAULT_MAX_DURATION_SEC = 30
 
 
+def _apply_pixel_modifications(
+    frame,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
+    saturation: float = 1.0,
+    tint_r: int = 0,
+    tint_g: int = 0,
+    tint_b: int = 0,
+) -> None:
+    """
+    Apply palette modifications in-place to a BGR frame.
+    brightness/contrast/saturation: 1.0 = no change; typical range 0.5–1.5.
+    tint_*: additive offset -30..30 (BGR order for OpenCV: tint_b, tint_g, tint_r).
+    """
+    import cv2
+    import numpy as np
+
+    if brightness != 1.0 or contrast != 1.0:
+        alpha = float(contrast)
+        beta = (float(brightness) - 1.0) * 128.0
+        frame[:] = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
+
+    if saturation != 1.0:
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float64)
+        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * saturation, 0, 255)
+        frame[:] = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+    if tint_b != 0 or tint_g != 0 or tint_r != 0:
+        frame[:] = np.clip(
+            frame.astype(np.int32) + np.array([tint_b, tint_g, tint_r], dtype=np.int32),
+            0,
+            255,
+        ).astype(np.uint8)
+
+
 def _download_video(video_id: str, out_dir: Path, max_duration_sec: int) -> None:
     try:
         import yt_dlp
@@ -116,6 +151,54 @@ def _draw_overlay(
         cv2.rectangle(frame, (bx, y), (bx + 24, y + 18), white, 1)
 
 
+def _wrap_text(text: str, max_chars_per_line: int = 55) -> list[str]:
+    """Split text into lines that fit on screen."""
+    words = text.replace("\n", " ").split()
+    lines: list[str] = []
+    current: list[str] = []
+    for w in words:
+        trial = " ".join(current) + (" " if current else "") + w
+        if len(trial) <= max_chars_per_line:
+            current.append(w)
+        else:
+            if current:
+                lines.append(" ".join(current))
+            current = [w] if len(w) <= max_chars_per_line else [w[:max_chars_per_line]]
+    if current:
+        lines.append(" ".join(current))
+    return lines
+
+
+def _draw_descriptor_title_card(
+    frame,
+    descriptor_text: str,
+    width: int,
+    height: int,
+) -> None:
+    """Draw descriptor text on a full-frame title card (e.g. for recreation)."""
+    import cv2
+    frame[:] = (32, 32, 40)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.45
+    thickness = 1
+    line_height = 22
+    margin = 24
+    lines = _wrap_text(descriptor_text, max_chars_per_line=55)
+    y = margin + line_height
+    for line in lines[: min(20, len(lines))]:
+        cv2.putText(frame, line[:70], (margin, y), font, font_scale, (220, 220, 220), thickness)
+        y += line_height
+    cv2.putText(
+        frame,
+        "JEPA video descriptor — use this text/data to recreate or search",
+        (margin, height - margin),
+        font,
+        0.4,
+        (150, 150, 180),
+        thickness,
+    )
+
+
 def render_video_with_overlay(
     video_id: str,
     jepa_summary: str,
@@ -130,6 +213,14 @@ def render_video_with_overlay(
     dominant_colors: list[list[int]],
     max_duration_sec: int = DEFAULT_MAX_DURATION_SEC,
     out_path: Optional[Path] = None,
+    descriptor_text: Optional[str] = None,
+    descriptor_title_card_sec: float = 4.0,
+    mod_brightness: float = 1.0,
+    mod_contrast: float = 1.0,
+    mod_saturation: float = 1.0,
+    mod_tint_r: int = 0,
+    mod_tint_g: int = 0,
+    mod_tint_b: int = 0,
 ) -> Path:
     """
     Download the video (first max_duration_sec), draw overlay on each frame, write to out_path.
@@ -165,10 +256,27 @@ def render_video_with_overlay(
             cap.release()
             raise ValueError("Could not create output video")
 
+        if descriptor_text and descriptor_title_card_sec > 0:
+            import numpy as np
+            n_card_frames = int(fps * descriptor_title_card_sec)
+            for _ in range(n_card_frames):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                _draw_descriptor_title_card(frame, descriptor_text, width, height)
+                writer.write(frame)
+
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+            _apply_pixel_modifications(
+                frame,
+                brightness=mod_brightness,
+                contrast=mod_contrast,
+                saturation=mod_saturation,
+                tint_r=mod_tint_r,
+                tint_g=mod_tint_g,
+                tint_b=mod_tint_b,
+            )
             _draw_overlay(
                 frame,
                 jepa_summary,

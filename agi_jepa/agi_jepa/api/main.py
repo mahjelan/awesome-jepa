@@ -158,6 +158,8 @@ class YoutubeAnalyzeResponse(BaseModel):
 class VideoOverlayRequest(BaseModel):
     """Request to download video and burn in JEPA + pixel analysis overlay."""
     video_id: str
+    title: str = ""
+    channel: str = ""
     summary: str = ""
     latent_norm: float = 0.0
     predicted_next_norm: Optional[float] = None
@@ -169,6 +171,33 @@ class VideoOverlayRequest(BaseModel):
     edge_density: float = 0.1
     dominant_colors: list[list[int]] = Field(default_factory=list)
     max_duration_sec: int = Field(30, ge=5, le=120)
+    # Modification palette (applied to pixels before overlay)
+    mod_brightness: float = Field(1.0, ge=0.3, le=2.0)
+    mod_contrast: float = Field(1.0, ge=0.3, le=2.0)
+    mod_saturation: float = Field(1.0, ge=0.0, le=2.5)
+    mod_tint_r: int = Field(0, ge=-50, le=50)
+    mod_tint_g: int = Field(0, ge=-50, le=50)
+    mod_tint_b: int = Field(0, ge=-50, le=50)
+    include_descriptor_card: bool = True
+
+
+class DescriptorRequest(BaseModel):
+    """Request to build a video descriptor (text + JSON) for recreation."""
+    video_id: str
+    title: str = ""
+    channel: str = ""
+    summary: str = ""
+    latent_norm: float = 0.0
+    latent_dim: int = 0
+    predicted_next_norm: Optional[float] = None
+    latent_preview: list[float] = Field(default_factory=list)
+    predicted_next_preview: Optional[list[float]] = None
+    pixel_insight_summary: str = ""
+    brightness: float = 0.5
+    contrast: float = 0.2
+    edge_density: float = 0.1
+    dominant_colors: list[list[int]] = Field(default_factory=list)
+    frame_size: Optional[list[int]] = None
 
 
 # --- Endpoints ---
@@ -186,7 +215,7 @@ def root():
 def api_root():
     return {
         "message": "AGI-JEPA API",
-        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/pixel_insights", "/api/youtube/encode", "/api/youtube/analyze", "/api/youtube/video_with_overlay"],
+        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/pixel_insights", "/api/youtube/encode", "/api/youtube/analyze", "/api/youtube/descriptor", "/api/youtube/video_with_overlay"],
     }
 
 
@@ -518,6 +547,34 @@ def youtube_analyze(req: YoutubeAnalyzeRequest):
     )
 
 
+@app.post("/api/youtube/descriptor")
+def youtube_descriptor(req: DescriptorRequest):
+    """
+    Build a video descriptor (text + JSON) from JEPA and pixel analysis.
+    The text can be used as a prompt or caption to describe/recreate the video;
+    the JSON contains full structured data (latent fingerprint, colors, etc.) for programmatic use.
+    """
+    from .descriptor import build_descriptor
+    text, data = build_descriptor(
+        video_id=req.video_id,
+        title=req.title,
+        channel=req.channel,
+        jepa_summary=req.summary,
+        latent_norm=req.latent_norm,
+        latent_dim=req.latent_dim,
+        predicted_next_norm=req.predicted_next_norm,
+        latent_preview=req.latent_preview or [],
+        predicted_next_preview=req.predicted_next_preview,
+        pixel_summary=req.pixel_insight_summary,
+        brightness=req.brightness,
+        contrast=req.contrast,
+        edge_density=req.edge_density,
+        dominant_colors=req.dominant_colors or [],
+        frame_size=req.frame_size,
+    )
+    return {"descriptor_text": text, "descriptor_json": data}
+
+
 @app.post("/api/youtube/video_with_overlay")
 def youtube_video_with_overlay(req: VideoOverlayRequest):
     """
@@ -529,7 +586,30 @@ def youtube_video_with_overlay(req: VideoOverlayRequest):
     if not req.video_id or len(req.video_id) > 20:
         raise HTTPException(400, "Invalid video_id")
     try:
+        from .descriptor import build_descriptor
         from .video_overlay import render_video_with_overlay
+        config = _get_models().get("config")
+        latent_dim = config.latent_dim if config else 512
+        desc_text = None
+        card_sec = 0.0
+        if req.include_descriptor_card:
+            desc_text, _ = build_descriptor(
+                video_id=req.video_id,
+                title=req.title,
+                channel=req.channel,
+                jepa_summary=req.summary,
+                latent_norm=req.latent_norm,
+                latent_dim=latent_dim,
+                predicted_next_norm=req.predicted_next_norm,
+                latent_preview=req.latent_preview or [],
+                predicted_next_preview=req.predicted_next_preview,
+                pixel_summary=req.pixel_insight_summary,
+                brightness=req.brightness,
+                contrast=req.contrast,
+                edge_density=req.edge_density,
+                dominant_colors=req.dominant_colors or [],
+            )
+            card_sec = 4.0
         out_path = render_video_with_overlay(
             video_id=req.video_id,
             jepa_summary=req.summary,
@@ -543,6 +623,14 @@ def youtube_video_with_overlay(req: VideoOverlayRequest):
             edge_density=req.edge_density,
             dominant_colors=req.dominant_colors or [],
             max_duration_sec=req.max_duration_sec,
+            descriptor_text=desc_text,
+            descriptor_title_card_sec=card_sec,
+            mod_brightness=req.mod_brightness,
+            mod_contrast=req.mod_contrast,
+            mod_saturation=req.mod_saturation,
+            mod_tint_r=req.mod_tint_r,
+            mod_tint_g=req.mod_tint_g,
+            mod_tint_b=req.mod_tint_b,
         )
         return FileResponse(
             path=str(out_path),

@@ -87,6 +87,24 @@ export default function App() {
   const [pixelInsightsError, setPixelInsightsError] = useState<string | null>(null)
   const [overlayDownloadLoading, setOverlayDownloadLoading] = useState(false)
   const [overlayDownloadError, setOverlayDownloadError] = useState<string | null>(null)
+  const [videoDescriptor, setVideoDescriptor] = useState<{ descriptor_text: string; descriptor_json: object } | null>(null)
+  const [descriptorLoading, setDescriptorLoading] = useState(false)
+  const [descriptorError, setDescriptorError] = useState<string | null>(null)
+  // Modification palette for result video pixels (1 = no change; tint -50..50)
+  const [modBrightness, setModBrightness] = useState(1)
+  const [modContrast, setModContrast] = useState(1)
+  const [modSaturation, setModSaturation] = useState(1)
+  const [modTintR, setModTintR] = useState(0)
+  const [modTintG, setModTintG] = useState(0)
+  const [modTintB, setModTintB] = useState(0)
+  const [includeDescriptorCard, setIncludeDescriptorCard] = useState(true)
+  const [savedPresets, setSavedPresets] = useState<{ name: string; mod: Record<string, number> }[]>(() => {
+    try {
+      const s = localStorage.getItem('jepa_palette_presets')
+      return s ? JSON.parse(s) : []
+    } catch { return [] }
+  })
+  const [tintPaletteChoice, setTintPaletteChoice] = useState<string>('')
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -380,7 +398,7 @@ export default function App() {
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
               <span style={{ fontSize: '0.9rem' }}>Original YouTube video (not modified by JEPA)</span>
-              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); setPixelInsights(null); setPixelInsightsError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
+              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); setPixelInsights(null); setPixelInsightsError(null); setVideoDescriptor(null); setDescriptorError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
             </div>
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 8, background: '#000' }}>
               <iframe
@@ -505,6 +523,116 @@ export default function App() {
                     </div>
                   )}
                   {pixelInsightsError && <p className="error" style={{ marginTop: 4 }}>{pixelInsightsError}</p>}
+                  {(videoAnalysis || pixelInsights) && (
+                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                      <strong style={{ display: 'block', marginBottom: '0.5rem' }}>Modification palette</strong>
+                      <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', color: '#9ca3af' }}>
+                        Adjust pixels in the result video before the JEPA overlay. Use JEPA/pixel analysis to suggest corrections or apply presets.
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem 0.75rem', marginBottom: '0.5rem' }}>
+                        {pixelInsights && (
+                          <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => {
+                            const b = pixelInsights.brightness
+                            const c = pixelInsights.contrast
+                            setModBrightness(b < 0.4 ? 1.2 : b > 0.8 ? 0.9 : 1)
+                            setModContrast(c < 0.12 ? 1.2 : c > 0.3 ? 0.95 : 1)
+                            setModSaturation(1)
+                          }}>Apply suggested (from analysis)</button>
+                        )}
+                        <span style={{ fontSize: '0.75rem', alignSelf: 'center' }}>Presets:</span>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => { setModBrightness(1.2); setModContrast(1); setModSaturation(1); setModTintR(0); setModTintG(0); setModTintB(0); }}>Brighten</button>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => { setModBrightness(1); setModContrast(1.25); setModSaturation(1); setModTintR(0); setModTintG(0); setModTintB(0); }}>Pop contrast</button>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => { setModBrightness(1); setModContrast(0.85); setModSaturation(0.9); setModTintR(0); setModTintG(0); setModTintB(0); }}>Softer</button>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => { setModBrightness(1); setModContrast(1); setModSaturation(1.35); setModTintR(0); setModTintG(0); setModTintB(0); }}>Vivid</button>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => { setModBrightness(1); setModContrast(1); setModSaturation(1); setModTintR(0); setModTintG(0); setModTintB(0); }}>Reset</button>
+                      </div>
+                      {pixelInsights && pixelInsights.dominant_colors.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                          <label style={{ fontSize: '0.8rem' }}>Tint from palette:</label>
+                          <select
+                            value={tintPaletteChoice}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setTintPaletteChoice(v)
+                              if (v === '') { setModTintR(0); setModTintG(0); setModTintB(0); return }
+                              if (v === 'warm') { setModTintR(12); setModTintG(6); setModTintB(-8); return }
+                              if (v === 'cool') { setModTintR(-8); setModTintG(4); setModTintB(14); return }
+                              const i = parseInt(v, 10)
+                              if (!isNaN(i) && pixelInsights.dominant_colors[i]) {
+                                const [r, g, b] = pixelInsights.dominant_colors[i]
+                                const scale = 0.2
+                                setModTintR(Math.round(Math.max(-50, Math.min(50, (r - 128) * scale))))
+                                setModTintG(Math.round(Math.max(-50, Math.min(50, (g - 128) * scale))))
+                                setModTintB(Math.round(Math.max(-50, Math.min(50, (b - 128) * scale))))
+                              }
+                            }}
+                            style={{ fontSize: '0.8rem', padding: '2px 6px' }}
+                          >
+                            <option value="">None</option>
+                            <option value="warm">Warm</option>
+                            <option value="cool">Cool</option>
+                            {pixelInsights.dominant_colors.map((_, i) => (
+                              <option key={i} value={i}>Dominant {i + 1}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem 1rem', marginBottom: '0.5rem' }}>
+                        <label style={{ fontSize: '0.8rem' }}>
+                          Brightness {(modBrightness * 100).toFixed(0)}%
+                          <input type="range" min={30} max={150} value={modBrightness * 100} onChange={(e) => setModBrightness(Number(e.target.value) / 100)} style={{ display: 'block', width: '100%' }} />
+                        </label>
+                        <label style={{ fontSize: '0.8rem' }}>
+                          Contrast {(modContrast * 100).toFixed(0)}%
+                          <input type="range" min={30} max={150} value={modContrast * 100} onChange={(e) => setModContrast(Number(e.target.value) / 100)} style={{ display: 'block', width: '100%' }} />
+                        </label>
+                        <label style={{ fontSize: '0.8rem' }}>
+                          Saturation {(modSaturation * 100).toFixed(0)}%
+                          <input type="range" min={0} max={250} value={modSaturation * 100} onChange={(e) => setModSaturation(Number(e.target.value) / 100)} style={{ display: 'block', width: '100%' }} />
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', alignItems: 'center', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.8rem' }}>Tint (RGB):</span>
+                        <label style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          R <input type="range" min={-50} max={50} value={modTintR} onChange={(e) => setModTintR(Number(e.target.value))} style={{ width: 60 }} />
+                          <span style={{ minWidth: 28 }}>{modTintR}</span>
+                        </label>
+                        <label style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          G <input type="range" min={-50} max={50} value={modTintG} onChange={(e) => setModTintG(Number(e.target.value))} style={{ width: 60 }} />
+                          <span style={{ minWidth: 28 }}>{modTintG}</span>
+                        </label>
+                        <label style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          B <input type="range" min={-50} max={50} value={modTintB} onChange={(e) => setModTintB(Number(e.target.value))} style={{ width: 60 }} />
+                          <span style={{ minWidth: 28 }}>{modTintB}</span>
+                        </label>
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>Save/Load:</span>
+                        <button type="button" style={{ fontSize: '0.75rem' }} onClick={() => {
+                          const name = prompt('Preset name')
+                          if (!name?.trim()) return
+                          const mod = { modBrightness, modContrast, modSaturation, modTintR, modTintG, modTintB }
+                          const next = [...savedPresets.filter((p) => p.name !== name.trim()), { name: name.trim(), mod }]
+                          setSavedPresets(next)
+                          localStorage.setItem('jepa_palette_presets', JSON.stringify(next))
+                        }}>Save current</button>
+                        <select style={{ fontSize: '0.75rem', padding: '2px 4px' }} value="" onChange={(e) => {
+                          const name = e.target.value
+                          if (!name) return
+                          const p = savedPresets.find((x) => x.name === name)
+                          if (p) { setModBrightness(p.mod.modBrightness); setModContrast(p.mod.modContrast); setModSaturation(p.mod.modSaturation); setModTintR(p.mod.modTintR); setModTintG(p.mod.modTintG); setModTintB(p.mod.modTintB); }
+                          e.target.value = ''
+                        }}>
+                          <option value="">Load preset…</option>
+                          {savedPresets.map((p) => (
+                            <option key={p.name} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', fontSize: '0.85rem' }}>
+                        <input type="checkbox" checked={includeDescriptorCard} onChange={(e) => setIncludeDescriptorCard(e.target.checked)} />
+                        Include descriptor card at start of video (4 s)
+                      </label>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
                     <button
                       type="button"
@@ -536,6 +664,8 @@ export default function App() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               video_id: previewVideoId,
+                              title: ytVideos.find((v) => v.id === previewVideoId)?.title ?? '',
+                              channel: ytVideos.find((v) => v.id === previewVideoId)?.channelTitle ?? '',
                               summary: videoAnalysis.summary,
                               latent_norm: videoAnalysis.latent_norm,
                               predicted_next_norm: videoAnalysis.predicted_next_norm ?? null,
@@ -547,6 +677,13 @@ export default function App() {
                               edge_density: pixelInsights?.edge_density ?? 0.1,
                               dominant_colors: pixelInsights?.dominant_colors ?? [],
                               max_duration_sec: 30,
+                              include_descriptor_card: includeDescriptorCard,
+                              mod_brightness: modBrightness,
+                              mod_contrast: modContrast,
+                              mod_saturation: modSaturation,
+                              mod_tint_r: modTintR,
+                              mod_tint_g: modTintG,
+                              mod_tint_b: modTintB,
                             }),
                           })
                           if (!res.ok) {
@@ -572,6 +709,90 @@ export default function App() {
                     </button>
                   </div>
                   {overlayDownloadError && <p className="error" style={{ marginTop: 4 }}>{overlayDownloadError}</p>}
+                  {(videoAnalysis || pixelInsights) && (
+                    <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+                      <strong>Video descriptor (for recreation)</strong>
+                      <p style={{ margin: '0.35rem 0', fontSize: '0.85rem', color: '#9ca3af' }}>
+                        Text and structured data that describe the video from JEPA + pixel analysis; use as a prompt or seed to recreate or search.
+                      </p>
+                      <button
+                        type="button"
+                        style={{ fontSize: '0.8rem', marginBottom: '0.5rem' }}
+                        disabled={descriptorLoading || !previewVideoId || !videoAnalysis}
+                        onClick={async () => {
+                          const video = ytVideos.find((v) => v.id === previewVideoId)
+                          if (!previewVideoId || !videoAnalysis || !video) return
+                          setDescriptorLoading(true)
+                          setDescriptorError(null)
+                          try {
+                            const res = await fetch(`${API_BASE}/youtube/descriptor`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                video_id: previewVideoId,
+                                title: video.title,
+                                channel: video.channelTitle ?? '',
+                                summary: videoAnalysis.summary,
+                                latent_norm: videoAnalysis.latent_norm,
+                                latent_dim: config?.latent_dim ?? 512,
+                                predicted_next_norm: videoAnalysis.predicted_next_norm ?? null,
+                                latent_preview: videoAnalysis.latent_preview,
+                                predicted_next_preview: videoAnalysis.predicted_next_preview ?? null,
+                                pixel_insight_summary: pixelInsights?.insight_summary ?? '',
+                                brightness: pixelInsights?.brightness ?? 0.5,
+                                contrast: pixelInsights?.contrast ?? 0.2,
+                                edge_density: pixelInsights?.edge_density ?? 0.1,
+                                dominant_colors: pixelInsights?.dominant_colors ?? [],
+                                frame_size: pixelInsights?.frame_size ?? null,
+                              }),
+                            })
+                            if (!res.ok) {
+                              const t = await res.json().catch(() => ({}))
+                              throw new Error((t as { detail?: string }).detail ?? res.statusText)
+                            }
+                            const data = await res.json()
+                            setVideoDescriptor({ descriptor_text: data.descriptor_text, descriptor_json: data.descriptor_json })
+                          } catch (e) {
+                            setDescriptorError(e instanceof Error ? e.message : String(e))
+                          } finally {
+                            setDescriptorLoading(false)
+                          }
+                        }}
+                      >
+                        {descriptorLoading ? 'Generating…' : 'Get video descriptor'}
+                      </button>
+                      {descriptorError && <p className="error" style={{ marginTop: 4 }}>{descriptorError}</p>}
+                      {videoDescriptor && (
+                        <>
+                          <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 4, fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto', marginTop: '0.5rem' }}>{videoDescriptor.descriptor_text}</pre>
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              style={{ fontSize: '0.8rem' }}
+                              onClick={() => { navigator.clipboard.writeText(videoDescriptor.descriptor_text).then(() => alert('Descriptor text copied')) }}
+                            >
+                              Copy descriptor text
+                            </button>
+                            <button
+                              type="button"
+                              style={{ fontSize: '0.8rem' }}
+                              onClick={() => {
+                                const blob = new Blob([JSON.stringify(videoDescriptor.descriptor_json, null, 2)], { type: 'application/json' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `jepa_descriptor_${previewVideoId}.json`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              }}
+                            >
+                              Download descriptor (JSON)
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
