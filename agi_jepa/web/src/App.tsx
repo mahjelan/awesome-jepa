@@ -65,6 +65,15 @@ export default function App() {
   // Output: latest result text + video to show in GUI
   const [outputLines, setOutputLines] = useState<string[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
+  // JEPA analysis result for the currently previewed video (analysis, not modified video)
+  const [videoAnalysis, setVideoAnalysis] = useState<{
+    summary: string
+    latent_norm: number
+    latent_preview: number[]
+    predicted_next_norm?: number
+  } | null>(null)
+  const [videoAnalysisLoading, setVideoAnalysisLoading] = useState(false)
+  const [videoAnalysisError, setVideoAnalysisError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -206,6 +215,47 @@ export default function App() {
     }
   }
 
+  async function analyzeVideoWithJEPA() {
+    const video = ytVideos.find((v) => v.id === previewVideoId)
+    if (!video || !config) return
+    setVideoAnalysisLoading(true)
+    setVideoAnalysisError(null)
+    setVideoAnalysis(null)
+    try {
+      const res = await fetch(`${API_BASE}/youtube/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video: {
+            id: video.id,
+            title: video.title,
+            description: video.description || '',
+            channelTitle: video.channelTitle || '',
+            publishedAt: video.publishedAt || '',
+            thumbnails: video.thumbnails || {},
+          },
+        }),
+      })
+      if (!res.ok) {
+        const t = await res.json().catch(() => ({}))
+        const d = (t as { detail?: string | string[] }).detail
+        throw new Error(Array.isArray(d) ? d[0] : d || res.statusText)
+      }
+      const data = await res.json()
+      setVideoAnalysis({
+        summary: data.summary,
+        latent_norm: data.latent_norm,
+        latent_preview: data.latent_preview || [],
+        predicted_next_norm: data.predicted_next_norm,
+      })
+      setOutputLines((prev) => [...prev, `JEPA analysis: ${video.title.slice(0, 40)}… → latent norm ${data.latent_norm.toFixed(3)}`])
+    } catch (e) {
+      setVideoAnalysisError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setVideoAnalysisLoading(false)
+    }
+  }
+
   async function encodeSelectedVideos() {
     const toEncode = ytVideos.filter((v) => selectedVideoIds.has(v.id))
     if (toEncode.length === 0) {
@@ -296,8 +346,8 @@ export default function App() {
         {previewVideoId && (
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-              <span style={{ fontSize: '0.9rem' }}>Video</span>
-              <button type="button" onClick={() => setPreviewVideoId(null)} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
+              <span style={{ fontSize: '0.9rem' }}>Original YouTube video (not modified by JEPA)</span>
+              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
             </div>
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 8, background: '#000' }}>
               <iframe
@@ -308,10 +358,27 @@ export default function App() {
                 allowFullScreen
               />
             </div>
+            <div style={{ marginTop: '0.75rem' }}>
+              <button type="button" onClick={analyzeVideoWithJEPA} disabled={videoAnalysisLoading || !ytVideos.some((v) => v.id === previewVideoId)} style={{ marginBottom: '0.5rem' }}>
+                {videoAnalysisLoading ? 'Analyzing…' : 'Analyze with JEPA'}
+              </button>
+              {videoAnalysisError && <p className="error" style={{ marginTop: '0.25rem' }}>{videoAnalysisError}</p>}
+              {videoAnalysis && (
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 6, fontSize: '0.9rem' }}>
+                  <strong>JEPA analysis (model output)</strong>
+                  <p style={{ margin: '0.5rem 0 0 0' }}>{videoAnalysis.summary}</p>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#9ca3af' }}>
+                    Latent norm: {videoAnalysis.latent_norm.toFixed(4)}
+                    {videoAnalysis.predicted_next_norm != null && ` · Predicted-next norm: ${videoAnalysis.predicted_next_norm.toFixed(4)}`}
+                  </p>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem' }}>First 8 latent dims: [{videoAnalysis.latent_preview.map((x) => x.toFixed(3)).join(', ')}]</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
         {outputLines.length === 0 && !previewVideoId && (
-          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Run training, plan, or encode YouTube videos to see output here. Click a video in the list to play it.</p>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Run training, plan, or encode YouTube videos to see output here. Click a video and use &quot;Play&quot; for the original YouTube video, then &quot;Analyze with JEPA&quot; to see the model&apos;s analysis (latent + predictor) displayed below.</p>
         )}
       </section>
 

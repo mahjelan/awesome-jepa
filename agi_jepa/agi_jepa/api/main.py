@@ -137,6 +137,22 @@ class YoutubeEncodeRequest(BaseModel):
     videos: list[YoutubeVideoItem]
 
 
+class YoutubeAnalyzeRequest(BaseModel):
+    video: YoutubeVideoItem
+
+
+class YoutubeAnalyzeResponse(BaseModel):
+    """JEPA analysis of one video: latent representation and predicted-next stats."""
+    video_id: str
+    title: str
+    channel: str
+    latent_norm: float
+    latent_dim: int
+    latent_preview: list[float]  # first 8 dims
+    predicted_next_norm: Optional[float] = None  # norm of predictor(context_latent)
+    summary: str
+
+
 # --- Endpoints ---
 
 @app.get("/")
@@ -152,7 +168,7 @@ def root():
 def api_root():
     return {
         "message": "AGI-JEPA API",
-        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/encode"],
+        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/encode", "/api/youtube/analyze"],
     }
 
 
@@ -415,6 +431,52 @@ def youtube_encode(req: YoutubeEncodeRequest):
     with torch.no_grad():
         z = encoder(t)
     return EncodeResponse(latents=z.cpu().tolist())
+
+
+@app.post("/api/youtube/analyze", response_model=YoutubeAnalyzeResponse)
+def youtube_analyze(req: YoutubeAnalyzeRequest):
+    """
+    Analyze one video with the JEPA model: encode to latent, optionally run predictor
+    (predict next latent), and return a text summary + stats for display in the GUI.
+    The video itself is not modified; this is analysis of its metadata representation.
+    """
+    import torch
+    from .youtube import video_metadata_to_obs_vector
+
+    m = _get_models()
+    encoder = m["encoder"]
+    predictor = m["predictor"]
+    config = m["config"]
+    device = m["device"]
+    obs_size = config.obs_dim * config.obs_channels * config.seq_len
+
+    text = f"{req.video.title}\n{req.video.description}"
+    obs = video_metadata_to_obs_vector(text, obs_size)
+    t = torch.tensor([obs], dtype=torch.float32, device=device)
+    with torch.no_grad():
+        z = encoder(t)
+        pred_next = predictor(z)
+    z_np = z[0].cpu()
+    norm = float(z_np.norm().item())
+    preview = z_np[:8].tolist()
+    pred_norm = float(pred_next[0].cpu().norm().item()) if pred_next is not None else None
+    title_short = req.video.title[:60] + ("…" if len(req.video.title) > 60 else "")
+    summary = (
+        f"Encoded to {config.latent_dim}-d latent (norm {norm:.3f}). "
+        f"Title: {title_short}. Channel: {req.video.channelTitle or '—'}."
+    )
+    if pred_norm is not None:
+        summary += f" Predictor 'next' latent norm: {pred_norm:.3f}."
+    return YoutubeAnalyzeResponse(
+        video_id=req.video.id,
+        title=req.video.title,
+        channel=req.video.channelTitle or "",
+        latent_norm=norm,
+        latent_dim=config.latent_dim,
+        latent_preview=preview,
+        predicted_next_norm=pred_norm,
+        summary=summary,
+    )
 
 
 if __name__ == "__main__":
