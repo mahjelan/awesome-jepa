@@ -12,3 +12,5 @@ agi_jepa.egg-info/SOURCES.txt
 agi_jepa.egg-info/dependency_links.txt
 agi_jepa.egg-info/requires.txt
 agi_jepa.egg-info/top_level.txt
+agi_jepa/api/__init__.py
+agi_jepa/api/main.py

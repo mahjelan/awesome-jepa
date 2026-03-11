@@ -77,4 +77,38 @@ python -m agi_jepa.train --steps 1000 --batch_size 32 --lr 1e-4
 
 Arguments: `--steps`, `--batch_size`, `--lr`, `--device` (e.g. `cuda`).
 
+## GUI (React + FastAPI)
+
+A small web UI runs the backend (FastAPI) and frontend (React + Vite) together.
+
+**1. Install backend** (from **awesome-jepa** repo root):
+
+```bash
+pip install -e agi_jepa
+pip install fastapi "uvicorn[standard]"
+```
+
+**2. Start the API** — run from the **outer** `agi_jepa` folder so the package is found:
+
+```bash
+cd agi_jepa
+python -m uvicorn agi_jepa.api.main:app --reload --port 8000
+```
+
+Or from repo root: `python agi_jepa/run_api.py`
+
+**Optional — YouTube (Algorythm-style):** Set `YOUTUBE_API_KEY` in the environment before starting the API to enable the "YouTube → AGI" section (search, trending, encode video metadata into JEPA latents). Same API pattern as `aixApp/algorythm`.
+
+**3. In another terminal, run the React app:**
+
+```bash
+cd agi_jepa/web
+npm install
+npm run dev
+```
+
+**4. Open** [http://localhost:5173](http://localhost:5173). The UI shows backend config, lets you run training (steps, batch size, LR), and run planning (horizon). API requests are proxied to the backend on port 8000.
+
+**Troubleshooting:** If `uvicorn` is not found, use `python -m uvicorn` (as above). If the API fails to import `agi_jepa.api.main`, start the server from inside the outer `agi_jepa` directory (`cd agi_jepa` then run the `uvicorn` command).
+
 See [AGI_MODEL_DESIGN.md](../AGI_MODEL_DESIGN.md) for the high-level design and mapping to papers in the awesome-jepa list.
