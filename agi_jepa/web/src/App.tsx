@@ -71,9 +71,22 @@ export default function App() {
     latent_norm: number
     latent_preview: number[]
     predicted_next_norm?: number
+    predicted_next_preview?: number[]
   } | null>(null)
   const [videoAnalysisLoading, setVideoAnalysisLoading] = useState(false)
   const [videoAnalysisError, setVideoAnalysisError] = useState<string | null>(null)
+  const [pixelInsights, setPixelInsights] = useState<{
+    brightness: number
+    contrast: number
+    edge_density: number
+    dominant_colors: [number, number, number][]
+    insight_summary: string
+    thumbnail_url: string
+    frame_size: [number, number]
+  } | null>(null)
+  const [pixelInsightsError, setPixelInsightsError] = useState<string | null>(null)
+  const [overlayDownloadLoading, setOverlayDownloadLoading] = useState(false)
+  const [overlayDownloadError, setOverlayDownloadError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/health`)
@@ -221,8 +234,11 @@ export default function App() {
     setVideoAnalysisLoading(true)
     setVideoAnalysisError(null)
     setVideoAnalysis(null)
+    setPixelInsights(null)
+    setPixelInsightsError(null)
     try {
-      const res = await fetch(`${API_BASE}/youtube/analyze`, {
+      const [analyzeRes, pixelRes] = await Promise.all([
+        fetch(`${API_BASE}/youtube/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -235,20 +251,37 @@ export default function App() {
             thumbnails: video.thumbnails || {},
           },
         }),
-      })
-      if (!res.ok) {
-        const t = await res.json().catch(() => ({}))
+      }),
+        fetch(`${API_BASE}/youtube/pixel_insights?video_id=${encodeURIComponent(video.id)}`),
+      ])
+      if (!analyzeRes.ok) {
+        const t = await analyzeRes.json().catch(() => ({}))
         const d = (t as { detail?: string | string[] }).detail
-        throw new Error(Array.isArray(d) ? d[0] : d || res.statusText)
+        throw new Error(Array.isArray(d) ? d[0] : d || analyzeRes.statusText)
       }
-      const data = await res.json()
+      const data = await analyzeRes.json()
       setVideoAnalysis({
         summary: data.summary,
         latent_norm: data.latent_norm,
         latent_preview: data.latent_preview || [],
         predicted_next_norm: data.predicted_next_norm,
+        predicted_next_preview: data.predicted_next_preview || undefined,
       })
       setOutputLines((prev) => [...prev, `JEPA analysis: ${video.title.slice(0, 40)}… → latent norm ${data.latent_norm.toFixed(3)}`])
+      if (pixelRes.ok) {
+        const pixelData = await pixelRes.json()
+        setPixelInsights({
+          brightness: pixelData.brightness,
+          contrast: pixelData.contrast,
+          edge_density: pixelData.edge_density,
+          dominant_colors: pixelData.dominant_colors || [],
+          insight_summary: pixelData.insight_summary || '',
+          thumbnail_url: pixelData.thumbnail_url || '',
+          frame_size: pixelData.frame_size || [0, 0],
+        })
+      } else {
+        setPixelInsightsError('Pixel analysis unavailable')
+      }
     } catch (e) {
       setVideoAnalysisError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -347,7 +380,7 @@ export default function App() {
           <div style={{ marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
               <span style={{ fontSize: '0.9rem' }}>Original YouTube video (not modified by JEPA)</span>
-              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
+              <button type="button" onClick={() => { setPreviewVideoId(null); setVideoAnalysis(null); setVideoAnalysisError(null); setPixelInsights(null); setPixelInsightsError(null); }} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>Close</button>
             </div>
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 8, background: '#000' }}>
               <iframe
@@ -357,21 +390,188 @@ export default function App() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
+              {videoAnalysis && (() => {
+                const z = videoAnalysis.latent_preview
+                const zPred = videoAnalysis.predicted_next_preview
+                const maxZ = Math.max(1e-6, ...z.map((v) => Math.abs(v)))
+                const maxPred = zPred && zPred.length ? Math.max(1e-6, ...zPred.map((v) => Math.abs(v))) : maxZ
+                return (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      background: 'linear-gradient(transparent, rgba(0,0,0,0.9))',
+                      color: '#e5e7eb',
+                      padding: '1.5rem 0.75rem 0.75rem 0.75rem',
+                      fontSize: '0.8rem',
+                      lineHeight: 1.4,
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '0.35rem', color: '#93c5fd' }}>JEPA analysis overlay</div>
+                    <div style={{ marginBottom: '0.35rem', maxHeight: '2.2em', overflow: 'hidden', textOverflow: 'ellipsis' }}>{videoAnalysis.summary}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginBottom: '0.4rem' }}>
+                      <span>‖z‖= <strong>{videoAnalysis.latent_norm.toFixed(3)}</strong></span>
+                      {videoAnalysis.predicted_next_norm != null && (
+                        <span>‖ẑ‖= <strong>{videoAnalysis.predicted_next_norm.toFixed(3)}</strong></span>
+                      )}
+                    </div>
+                    <div style={{ marginBottom: '0.2rem', fontSize: '0.7rem', opacity: 0.85 }}>Latent fingerprint (first 8 dims) — current z vs predicted next ẑ</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: 28 }}>
+                      {z.map((v, i) => (
+                        <div
+                          key={`z-${i}`}
+                          title={`z[${i}]=${v.toFixed(3)}`}
+                          style={{
+                            flex: 1,
+                            minWidth: 4,
+                            height: `${Math.min(100, (Math.abs(v) / maxZ) * 100)}%`,
+                            background: v >= 0 ? 'rgba(59, 130, 246, 0.9)' : 'rgba(96, 165, 250, 0.5)',
+                            borderRadius: 1,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {zPred && zPred.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: 28, marginTop: 2 }}>
+                        {zPred.map((v, i) => (
+                          <div
+                            key={`p-${i}`}
+                            title={`ẑ[${i}]=${v.toFixed(3)}`}
+                            style={{
+                              flex: 1,
+                              minWidth: 4,
+                              height: `${Math.min(100, (Math.abs(v) / maxPred) * 100)}%`,
+                              background: v >= 0 ? 'rgba(251, 146, 60, 0.9)' : 'rgba(253, 186, 116, 0.5)',
+                              borderRadius: 1,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: 4, fontSize: '0.65rem', opacity: 0.8 }}>
+                      <span style={{ color: '#93c5fd' }}>▬ z (current)</span>
+                      {zPred?.length ? <span style={{ color: '#fdba74' }}>▬ ẑ (predicted next)</span> : null}
+                    </div>
+                    {pixelInsights && (
+                      <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 600, marginBottom: 2, color: '#a5b4fc' }}>Pixel analysis (frame)</div>
+                        <div style={{ fontSize: '0.7rem', marginBottom: 4 }}>{pixelInsights.insight_summary}</div>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span>B:{pixelInsights.brightness.toFixed(2)} C:{pixelInsights.contrast.toFixed(2)} E:{pixelInsights.edge_density.toFixed(2)}</span>
+                          {pixelInsights.dominant_colors.map((rgb, i) => (
+                            <span key={i} style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 2, background: `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`, border: '1px solid rgba(255,255,255,0.3)' }} title={`RGB(${rgb[0]},${rgb[1]},${rgb[2]})`} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
             <div style={{ marginTop: '0.75rem' }}>
               <button type="button" onClick={analyzeVideoWithJEPA} disabled={videoAnalysisLoading || !ytVideos.some((v) => v.id === previewVideoId)} style={{ marginBottom: '0.5rem' }}>
                 {videoAnalysisLoading ? 'Analyzing…' : 'Analyze with JEPA'}
               </button>
               {videoAnalysisError && <p className="error" style={{ marginTop: '0.25rem' }}>{videoAnalysisError}</p>}
-              {videoAnalysis && (
+              {(videoAnalysis || pixelInsights) && (
                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 6, fontSize: '0.9rem' }}>
-                  <strong>JEPA analysis (model output)</strong>
-                  <p style={{ margin: '0.5rem 0 0 0' }}>{videoAnalysis.summary}</p>
-                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#9ca3af' }}>
-                    Latent norm: {videoAnalysis.latent_norm.toFixed(4)}
-                    {videoAnalysis.predicted_next_norm != null && ` · Predicted-next norm: ${videoAnalysis.predicted_next_norm.toFixed(4)}`}
-                  </p>
-                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem' }}>First 8 latent dims: [{videoAnalysis.latent_preview.map((x) => x.toFixed(3)).join(', ')}]</p>
+                  <strong>Results after analysis</strong>
+                  {videoAnalysis && (
+                    <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.25rem' }}>
+                      <li><strong>Video:</strong> Original YouTube video only (above). No video is generated or modified by JEPA.</li>
+                      <li><strong>JEPA text:</strong> {videoAnalysis.summary}</li>
+                      <li><strong>JEPA numerical:</strong> Latent norm = {videoAnalysis.latent_norm.toFixed(4)}
+                        {videoAnalysis.predicted_next_norm != null && `; Predicted-next norm = ${videoAnalysis.predicted_next_norm.toFixed(4)}`}.
+                        First 8 latent dims: [{videoAnalysis.latent_preview.map((x) => x.toFixed(3)).join(', ')}]
+                      </li>
+                    </ul>
+                  )}
+                  {pixelInsights && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <strong>Pixel analysis (thumbnail frame)</strong>
+                      <p style={{ margin: '0.25rem 0 0 0' }}>{pixelInsights.insight_summary}</p>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>
+                        Brightness: {pixelInsights.brightness.toFixed(3)} · Contrast: {pixelInsights.contrast.toFixed(3)} · Edge density: {pixelInsights.edge_density.toFixed(3)}
+                      </p>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>Dominant colors:</p>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        {pixelInsights.dominant_colors.map((rgb, i) => (
+                          <span key={i} style={{ width: 24, height: 24, borderRadius: 4, background: `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`, border: '1px solid #555' }} title={`RGB(${rgb[0]},${rgb[1]},${rgb[2]})`} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {pixelInsightsError && <p className="error" style={{ marginTop: 4 }}>{pixelInsightsError}</p>}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <button
+                      type="button"
+                      style={{ fontSize: '0.8rem' }}
+                      onClick={() => {
+                        let text = ''
+                        if (videoAnalysis) {
+                          text += `JEPA analysis\n\nText: ${videoAnalysis.summary}\n\nNumerical: latent_norm=${videoAnalysis.latent_norm.toFixed(4)}${videoAnalysis.predicted_next_norm != null ? `, predicted_next_norm=${videoAnalysis.predicted_next_norm.toFixed(4)}` : ''}\nFirst 8 dims: [${videoAnalysis.latent_preview.map((x) => x.toFixed(3)).join(', ')}]`
+                        }
+                        if (pixelInsights) {
+                          text += (text ? '\n\n' : '') + `Pixel analysis (frame)\n${pixelInsights.insight_summary}\nBrightness: ${pixelInsights.brightness.toFixed(3)}  Contrast: ${pixelInsights.contrast.toFixed(3)}  Edge density: ${pixelInsights.edge_density.toFixed(3)}\nDominant colors RGB: ${pixelInsights.dominant_colors.map((c) => `(${c[0]},${c[1]},${c[2]})`).join(', ')}`
+                        }
+                        if (text) navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard'))
+                      }}
+                    >
+                      Copy results (JEPA + pixel)
+                    </button>
+                    <button
+                      type="button"
+                      style={{ fontSize: '0.8rem' }}
+                      disabled={overlayDownloadLoading || !previewVideoId || !videoAnalysis}
+                      onClick={async () => {
+                        if (!previewVideoId || !videoAnalysis) return
+                        setOverlayDownloadLoading(true)
+                        setOverlayDownloadError(null)
+                        try {
+                          const res = await fetch(`${API_BASE}/youtube/video_with_overlay`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              video_id: previewVideoId,
+                              summary: videoAnalysis.summary,
+                              latent_norm: videoAnalysis.latent_norm,
+                              predicted_next_norm: videoAnalysis.predicted_next_norm ?? null,
+                              latent_preview: videoAnalysis.latent_preview,
+                              predicted_next_preview: videoAnalysis.predicted_next_preview ?? null,
+                              pixel_insight_summary: pixelInsights?.insight_summary ?? '',
+                              brightness: pixelInsights?.brightness ?? 0.5,
+                              contrast: pixelInsights?.contrast ?? 0.2,
+                              edge_density: pixelInsights?.edge_density ?? 0.1,
+                              dominant_colors: pixelInsights?.dominant_colors ?? [],
+                              max_duration_sec: 30,
+                            }),
+                          })
+                          if (!res.ok) {
+                            const t = await res.json().catch(() => ({}))
+                            const d = (t as { detail?: string }).detail
+                            throw new Error(typeof d === 'string' ? d : res.statusText)
+                          }
+                          const blob = await res.blob()
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = `jepa_overlay_${previewVideoId}.mp4`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        } catch (e) {
+                          setOverlayDownloadError(e instanceof Error ? e.message : String(e))
+                        } finally {
+                          setOverlayDownloadLoading(false)
+                        }
+                      }}
+                    >
+                      {overlayDownloadLoading ? 'Downloading…' : 'Download video with JEPA overlay'}
+                    </button>
+                  </div>
+                  {overlayDownloadError && <p className="error" style={{ marginTop: 4 }}>{overlayDownloadError}</p>}
                 </div>
               )}
             </div>

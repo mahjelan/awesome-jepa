@@ -23,6 +23,7 @@ except ImportError:
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 # Lazy import agi_jepa so server starts even if torch fails
@@ -149,8 +150,25 @@ class YoutubeAnalyzeResponse(BaseModel):
     latent_norm: float
     latent_dim: int
     latent_preview: list[float]  # first 8 dims
-    predicted_next_norm: Optional[float] = None  # norm of predictor(context_latent)
+    predicted_next_norm: Optional[float] = None
+    predicted_next_preview: Optional[list[float]] = None  # first 8 dims of predictor(z), for overlay viz
     summary: str
+
+
+class VideoOverlayRequest(BaseModel):
+    """Request to download video and burn in JEPA + pixel analysis overlay."""
+    video_id: str
+    summary: str = ""
+    latent_norm: float = 0.0
+    predicted_next_norm: Optional[float] = None
+    latent_preview: list[float] = Field(default_factory=list)
+    predicted_next_preview: Optional[list[float]] = None
+    pixel_insight_summary: str = ""
+    brightness: float = 0.5
+    contrast: float = 0.2
+    edge_density: float = 0.1
+    dominant_colors: list[list[int]] = Field(default_factory=list)
+    max_duration_sec: int = Field(30, ge=5, le=120)
 
 
 # --- Endpoints ---
@@ -168,7 +186,7 @@ def root():
 def api_root():
     return {
         "message": "AGI-JEPA API",
-        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/encode", "/api/youtube/analyze"],
+        "endpoints": ["/api/health", "/api/config", "/api/train", "/api/train/youtube", "/api/plan", "/api/youtube/search", "/api/youtube/trending", "/api/youtube/pixel_insights", "/api/youtube/encode", "/api/youtube/analyze", "/api/youtube/video_with_overlay"],
     }
 
 
@@ -404,6 +422,24 @@ def youtube_trending(region_code: str = "US", max_results: int = 20):
         raise HTTPException(502, f"YouTube API error: {e}")
 
 
+@app.get("/api/youtube/pixel_insights")
+def youtube_pixel_insights(video_id: str):
+    """
+    Analyze pixels of the video's thumbnail (representative frame).
+    Returns brightness, contrast, edge_density, dominant_colors, insight_summary.
+    Uses public YouTube thumbnail image; no full video download.
+    """
+    if not video_id or len(video_id) > 20:
+        raise HTTPException(400, "Invalid video_id")
+    try:
+        from .pixel_analysis import analyze_pixels
+        return analyze_pixels(video_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Pixel analysis error: {e}")
+
+
 @app.post("/api/youtube/encode", response_model=EncodeResponse)
 def youtube_encode(req: YoutubeEncodeRequest):
     """
@@ -457,9 +493,11 @@ def youtube_analyze(req: YoutubeAnalyzeRequest):
         z = encoder(t)
         pred_next = predictor(z)
     z_np = z[0].cpu()
+    pred_np = pred_next[0].cpu() if pred_next is not None else None
     norm = float(z_np.norm().item())
     preview = z_np[:8].tolist()
-    pred_norm = float(pred_next[0].cpu().norm().item()) if pred_next is not None else None
+    pred_norm = float(pred_np.norm().item()) if pred_np is not None else None
+    pred_preview = pred_np[:8].tolist() if pred_np is not None else None
     title_short = req.video.title[:60] + ("…" if len(req.video.title) > 60 else "")
     summary = (
         f"Encoded to {config.latent_dim}-d latent (norm {norm:.3f}). "
@@ -475,8 +513,46 @@ def youtube_analyze(req: YoutubeAnalyzeRequest):
         latent_dim=config.latent_dim,
         latent_preview=preview,
         predicted_next_norm=pred_norm,
+        predicted_next_preview=pred_preview,
         summary=summary,
     )
+
+
+@app.post("/api/youtube/video_with_overlay")
+def youtube_video_with_overlay(req: VideoOverlayRequest):
+    """
+    Download the YouTube video (first max_duration_sec), burn in JEPA + pixel analysis
+    overlay on each frame, and return the resulting MP4 file.
+    Requires: yt-dlp, opencv-python, ffmpeg (for duration limit). Use analysis from
+    /api/youtube/analyze and /api/youtube/pixel_insights.
+    """
+    if not req.video_id or len(req.video_id) > 20:
+        raise HTTPException(400, "Invalid video_id")
+    try:
+        from .video_overlay import render_video_with_overlay
+        out_path = render_video_with_overlay(
+            video_id=req.video_id,
+            jepa_summary=req.summary,
+            latent_norm=req.latent_norm,
+            predicted_next_norm=req.predicted_next_norm,
+            latent_preview=req.latent_preview or [],
+            predicted_next_preview=req.predicted_next_preview,
+            pixel_insight_summary=req.pixel_insight_summary,
+            brightness=req.brightness,
+            contrast=req.contrast,
+            edge_density=req.edge_density,
+            dominant_colors=req.dominant_colors or [],
+            max_duration_sec=req.max_duration_sec,
+        )
+        return FileResponse(
+            path=str(out_path),
+            filename=f"jepa_overlay_{req.video_id}.mp4",
+            media_type="video/mp4",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Video overlay error: {e}")
 
 
 if __name__ == "__main__":

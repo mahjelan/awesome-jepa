@@ -127,6 +127,8 @@ Get a key: [Google Cloud Console](https://console.cloud.google.com/apis/credenti
 3. Under **API restrictions**, either "Don't restrict key" or ensure **YouTube Data API v3** is in the allowed list.
 4. Wait a minute after enabling the API, then try again.
 
+**Download video with JEPA overlay:** After analyzing a video in the UI, use **"Download video with JEPA overlay"** to fetch the YouTube video (first 30 seconds), burn in the JEPA and pixel analysis on each frame, and save an MP4. This needs extra dependencies: `pip install yt-dlp opencv-python-headless` and **ffmpeg** on your PATH (for limiting clip duration). Downloading may be subject to YouTube’s terms of service; use for personal/educational use only.
+
 **3. In another terminal, run the React app:**
 
 ```bash
