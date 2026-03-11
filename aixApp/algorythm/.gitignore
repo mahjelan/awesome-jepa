@@ -1,0 +1,14 @@
+.parcel-cache/
+dist/
+node_modules/
+firebase.json
+
+# Environment variables (contains sensitive API keys)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.firebase/hosting.ZGlzdA.cache
+.firebase/hosting.ZGlzdA.cache
+

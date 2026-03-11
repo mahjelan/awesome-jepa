@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection: for login, register, and Google OAuth user doc creation.
+    match /users/{userId} {
+      allow read, write: if true;
+      // User data (posts, saved discoveries)
+      match /data/{itemId} {
+        allow read, write: if true;
+      }
+    }
+    // Required for collection group query (public feed). Recursive wildcard
+    // matches any path ending in /data/{itemId}, e.g. users/xyz/data/abc.
+    match /{path=**}/data/{itemId} {
+      allow read, write: if true;
+    }
+  }
+}

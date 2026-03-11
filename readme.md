@@ -35,6 +35,15 @@ March 10, 2026 at 02:26:35 AM UTC
 
 ## Theorem
 
+## AGI Integration
+
+This repository includes an **AGI-oriented model design** that unifies the papers above into a single, extensible architecture:
+
+- **[AGI_MODEL_DESIGN.md](AGI_MODEL_DESIGN.md)** — Design document: encoder, JEPA predictor, world model, and value-guided planner, with references to the Papers list.
+- **[agi_jepa/](agi_jepa/)** — Minimal Python (PyTorch) implementation: `Encoder`, `Predictor`, `WorldModel`, and `Planner` modules you can extend with ideas from any paper in this list.
+
+See `agi_jepa/README.md` for install and usage.
+
 ## Papers (86)
 - [PhysVideoGenerator: Towards Physically Aware Video Generation via Latent Physics Guidance](https://arxiv.org/abs/2601.03665)
 - [HanoiWorld : A Joint Embedding Predictive Architecture BasedWorld Model for Autonomous Vehicle Controller](https://arxiv.org/abs/2601.01577)

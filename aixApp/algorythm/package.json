@@ -1,0 +1,47 @@
+{
+  "name": "algorythm",
+  "private": true,
+  "version": "1.0.0",
+  "description": "YouTube trending content analysis application",
+  "source": "src/index.html",
+  "scripts": {
+    "start": "parcel src/index.html",
+    "build": "parcel build src/index.html",
+    "dev": "parcel src/index.html --open",
+    "clean": "rmdir /s /q dist .parcel-cache 2>nul || echo \"Clean completed\""
+  },
+  "dependencies": {
+    "firebase": "^12.8.0",
+    "lodash": "^4.17.21",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^6.30.0"
+  },
+  "devDependencies": {
+    "@types/gapi": "^0.0.47",
+    "@types/gapi.youtube": "^3.0.40",
+    "@types/lodash": "^4.17.17",
+    "@types/node": "^22.15.21",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "buffer": "^6.0.3",
+    "parcel": "^2.14.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22.9.0",
+    "npm": ">=10.0.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

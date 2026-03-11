@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MYTZQNMEE"></script>
+    <script>
+        function gtagSendEvent(url) {
+            var callback = function () {
+                if (typeof url === 'string') {
+                    window.location = url;
+                }
+            };
+            gtag('event', 'blogs_and_articles', {
+                'event_callback': callback,
+                'event_timeout': 2000,
+                // <event_parameters>
+            });
+            return false;
+        }
+    </script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Trending content application" />
+    <meta name="theme-color" content="#000000" />
+    <!-- YouTube Policy Compliance: Proper Referrer Policy -->
+    <meta name="referrer" content="origin" />
+    <!-- Permissions Policy for YouTube iframe compatibility -->
+    <meta http-equiv="Permissions-Policy" content="compute-pressure=*" />
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;
+                 script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://content.googleapis.com https://accounts.google.com https://apis.google.com https://www.gstatic.com https://ssl.gstatic.com https://www.google.com https://www.googletagmanager.com https://www.google-analytics.com;
+                 frame-src https://www.youtube.com https://content.googleapis.com https://accounts.google.com https://apis.google.com https://www.gstatic.com https://ssl.gstatic.com https://www.google.com https://www.googletagmanager.com;
+                 connect-src 'self' https://www.googleapis.com https://content.googleapis.com https://accounts.google.com https://apis.google.com https://www.google.com https://www.googletagmanager.com https://www.google-analytics.com https://api.openai.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://*.firebaseapp.com https://*.firebasestorage.app;
+                 img-src 'self' data: blob: https://www.youtube.com https://content.googleapis.com https://accounts.google.com https://apis.google.com https://www.gstatic.com https://ssl.gstatic.com https://www.google.com https://i.ytimg.com https://img.youtube.com;" />
+    <!-- Security Headers -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Algorythm" />
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <link rel="shortcut icon" type="image/x-icon" href="./favicon.ico" />
+    <!-- Preconnect to critical domains for faster loading -->
+    <link rel="preconnect" href="https://i.ytimg.com" crossorigin />
+    <link rel="preconnect" href="https://img.youtube.com" crossorigin />
+    <link rel="preconnect" href="https://www.youtube.com" crossorigin />
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://algorythms-3aaac.firebaseapp.com" crossorigin />
+    <link rel="dns-prefetch" href="https://i.ytimg.com" />
+    <link rel="dns-prefetch" href="https://img.youtube.com" />
+    <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
+    <link rel="dns-prefetch" href="https://securetoken.googleapis.com" />
+    <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6STT7VZXDJ"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-6STT7VZXDJ');
+    </script>
+    <!-- Aggressive console filtering for ALL Edge deprecation warnings -->
+    <script>
+        (function () {
+            // Override console methods with maximum suppression
+            var originalWarn = console.warn;
+            var originalLog = console.log;
+            var originalInfo = console.info;
+
+            function isDeprecationMessage(args) {
+                var fullMessage = '';
+                for (var i = 0; i < args.length; i++) {
+                    if (args[i] && typeof args[i] === 'string') {
+                        fullMessage += args[i] + ' ';
+                    }
+                }
+
+                return fullMessage.includes('Deprecation') && fullMessage.includes('contrast') ||
+                    fullMessage.includes('blogs.windows.com/msedgedev') ||
+                    fullMessage.includes('Tracking Prevention blocked') ||
+                    fullMessage.includes('blocked access to storage');
+            }
+
+            console.warn = function () {
+                if (!isDeprecationMessage(arguments)) {
+                    return originalWarn.apply(this, arguments);
+                }
+                // Completely silent for deprecation warnings
+            };
+
+            console.log = function () {
+                if (!isDeprecationMessage(arguments)) {
+                    return originalLog.apply(this, arguments);
+                }
+                // Completely silent for deprecation warnings
+            };
+
+            console.info = function () {
+                if (!isDeprecationMessage(arguments)) {
+                    return originalInfo.apply(this, arguments);
+                }
+                // Completely silent for deprecation warnings
+            };
+
+            // Also suppress at the global level
+            window.addEventListener('error', function (e) {
+                if (e.message && (e.message.includes('Deprecation') && e.message.includes('contrast') ||
+                    e.message.includes('Tracking Prevention blocked'))) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            });
+
+            // Intercept any remaining console calls from deep in the system
+            var originalConsole = window.console;
+            Object.defineProperty(window, 'console', {
+                get: function () {
+                    return {
+                        log: function () { if (!isDeprecationMessage(arguments)) originalConsole.log.apply(originalConsole, arguments); },
+                        warn: function () { if (!isDeprecationMessage(arguments)) originalConsole.warn.apply(originalConsole, arguments); },
+                        error: function () { if (!isDeprecationMessage(arguments)) originalConsole.error.apply(originalConsole, arguments); },
+                        info: function () { if (!isDeprecationMessage(arguments)) originalConsole.info.apply(originalConsole, arguments); },
+                        debug: function () { if (!isDeprecationMessage(arguments)) originalConsole.debug.apply(originalConsole, arguments); },
+                        trace: originalConsole.trace.bind(originalConsole),
+                        table: originalConsole.table.bind(originalConsole),
+                        group: originalConsole.group.bind(originalConsole),
+                        groupEnd: originalConsole.groupEnd.bind(originalConsole),
+                        clear: originalConsole.clear.bind(originalConsole)
+                    };
+                },
+                configurable: false
+            });
+        })();
+    </script>
+
+    <!-- Simplified API Loading -->
+    <script>
+        // Simple API loading without complex fallback detection
+        window.apiLoadingStatus = {
+            googleAuth: false,
+            googleAPI: false,
+            youtubeIframe: false,
+            fallbackMode: false
+        };
+
+        // Load Google APIs
+        (function () {
+            var script = document.createElement('script');
+            script.src = 'https://apis.google.com/js/api.js';
+            script.async = true;
+            script.defer = true;
+            script.onload = function () {
+                window.apiLoadingStatus.googleAPI = true;
+                console.log('Google API loaded successfully');
+            };
+            script.onerror = function () {
+                console.warn('Google API failed to load');
+            };
+            document.head.appendChild(script);
+        })();
+
+        // Load Google Sign-In API
+        (function () {
+            var script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            script.onload = function () {
+                window.apiLoadingStatus.googleAuth = true;
+                console.log('Google Auth API loaded successfully');
+            };
+            script.onerror = function () {
+                console.warn('Google Auth API failed to load');
+            };
+            document.head.appendChild(script);
+        })();
+
+        // Load YouTube iframe API
+        (function () {
+            var script = document.createElement('script');
+            script.src = 'https://www.youtube.com/iframe_api';
+            script.async = true;
+            script.onload = function () {
+                window.apiLoadingStatus.youtubeIframe = true;
+                console.log('YouTube iframe API loaded successfully');
+            };
+            script.onerror = function () {
+                console.warn('YouTube iframe API failed to load');
+            };
+            document.head.appendChild(script);
+        })();
+    </script>
+
+    <title>Algorythm - Trending Content</title>
+</head>
+
+<body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="app"></div>
+
+    <!-- Parcel will inject the script tag here -->
+    <script type="module" src="./index.tsx"></script>
+</body>
+
+</html>

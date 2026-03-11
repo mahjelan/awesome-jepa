@@ -1,0 +1,10 @@
+rules_version = '2';
+// Firebase Storage: allow users to read/write their own folder (users/{userId}/...)
+// For custom auth we use open access here; restrict in production.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}
